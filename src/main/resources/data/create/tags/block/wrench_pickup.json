@@ -1,0 +1,7 @@
+{
+  "values": [
+    "drivebywire:controller_hub",
+    "drivebywire:tweaked_controller_hub",
+    "drivebywire:backup_block"
+  ]
+}
