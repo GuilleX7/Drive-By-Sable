@@ -39,14 +39,14 @@ displayName="Drive-By-Sable Tweaks" #mandatory
 #logoFile="examplemod.png" #optional
 
 # A text field displayed in the mod UI
-credits="Porting work in progress for the Sable ecosystem."
+credits="Addon mod for Drive-By-Wire with Sable."
 
 # The authors of the mod, displayed in the mod UI (optional)
 authors="lakeOpossMC"
 
 # The description text for the mod (multi line!) (#mandatory)
 description='''
-${mod_description}
+Minor tweaks and changes to blocks from Drive-By-Wire with Sable.
 '''
 
 # The [[mixins]] block allows you to declare your mixin config to FML so that it gets loaded.
@@ -61,7 +61,7 @@ ${mod_description}
 # The coremods config file path is not configurable and is always loaded from META-INF/coremods.json
 
 # A dependency - use the . to indicate dependency for a specific modid. Dependencies are optional.
-[[dependencies.${mod_id}]] #optional
+[[dependencies."drivebysabletweaks"]] #optional
     # the modid of the dependency
     modId="neoforge" #mandatory
     # The type of the dependency. Can be one of "required", "optional", "incompatible" or "discouraged" (case insensitive).
@@ -80,7 +80,7 @@ ${mod_description}
     side="BOTH"
 
 # Here's another dependency
-[[dependencies.${mod_id}]]
+[[dependencies."drivebysabletweaks"]]
     modId="minecraft"
     type="required"
     # This version range declares a minimum of the current minecraft version up to but not including the next major version
@@ -88,28 +88,28 @@ ${mod_description}
     ordering="NONE"
     side="BOTH"
 
-[[dependencies.${mod_id}]]
+[[dependencies."drivebysabletweaks"]]
     modId="create"
     type="required"
     versionRange="[${create_mod_version},)"
     ordering="AFTER"
     side="BOTH"
 
-[[dependencies.${mod_id}]]
+[[dependencies."drivebysabletweaks"]]
     modId="sable"
     type="required"
     versionRange="[${sable_mod_version},)"
     ordering="AFTER"
     side="BOTH"
 
-[[dependencies.${mod_id}]]
+[[dependencies."drivebysabletweaks"]]
     modId="drivebywire"
     type="required"
     versionRange="[0,)"
     ordering="AFTER"
     side="BOTH"
 
-[[dependencies.${mod_id}]]
+[[dependencies."drivebysabletweaks"]]
     modId="create_tweaked_controllers"
     type="optional"
     versionRange="[0,)"
