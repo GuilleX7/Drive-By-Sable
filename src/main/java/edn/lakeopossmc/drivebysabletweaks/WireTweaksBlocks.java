@@ -9,9 +9,13 @@ import net.neoforged.bus.api.IEventBus;
 import net.neoforged.neoforge.registries.DeferredBlock;
 import net.neoforged.neoforge.registries.DeferredRegister;
 
+// --- BLOCK REGISTRY --- //
+// * Defines general block stuff for the game to recognize
 public final class WireTweaksBlocks {
+    // --- CREATE REGISTRY UNDER MODID --- //
     public static final DeferredRegister.Blocks BLOCKS = DeferredRegister.createBlocks("drivebysabletweaks");
 
+    // --- REGISTER MY FREAKING BLOCKS --- //
     public static final DeferredBlock<DirectionalControllerHubBlock> CABLE_HUB = BLOCKS.register(
             "cable_hub",
             () -> new DirectionalControllerHubBlock(commonProperties())
@@ -28,6 +32,7 @@ public final class WireTweaksBlocks {
         BLOCKS.register(modEventBus);
     }
 
+    // --- BLOCK PROPERTIES FOR ALL --- //
     private static BlockBehaviour.Properties commonProperties() {
         return BlockBehaviour.Properties.of()
                 .mapColor(MapColor.COLOR_ORANGE)
