@@ -2,8 +2,14 @@
   "replace": false,
   "values": [
     "drivebysable:cable_hub",
-    "drivebysable:advanced_cable_hub",
+    {
+      "id": "drivebysable:advanced_cable_hub",
+      "required": false
+    },
     "drivebysable:backup_drive",
-    "drivebysable:cable_typewriter_hub"
+    {
+      "id": "drivebysable:cable_typewriter_hub",
+      "required": false
+    }
   ]
 }
