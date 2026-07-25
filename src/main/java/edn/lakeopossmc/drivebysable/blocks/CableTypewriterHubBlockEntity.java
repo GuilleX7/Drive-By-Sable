@@ -8,6 +8,8 @@ import edn.lakeopossmc.drivebysable.cable.CableServerFeedback;
 import edn.lakeopossmc.drivebysable.cable.MultiChannelCableSource;
 import edn.lakeopossmc.drivebysable.cable.graph.CableNetworkNode.CableNetworkSink;
 import edn.lakeopossmc.drivebysable.compat.CableTypewriterHubServerHandler;
+import edn.lakeopossmc.drivebysable.compat.keytranslator.ControllerChannelTranslator;
+import edn.lakeopossmc.drivebysable.compat.keytranslator.ControllerChannelTranslator.Vocabulary;
 import net.createmod.catnip.lang.Lang;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
@@ -205,6 +207,7 @@ public class CableTypewriterHubBlockEntity extends LinkedTypewriterBlockEntity {
         }
 
         tag.put(CableHubBlockEntity.CONNECTIONS_KEY, connections);
+        tag.putString(CableHubBlockEntity.VOCABULARY_KEY, Vocabulary.TYPEWRITER.name());
         return true;
     }
 
@@ -226,6 +229,11 @@ public class CableTypewriterHubBlockEntity extends LinkedTypewriterBlockEntity {
                 ? tag.getList(CableHubBlockEntity.CONNECTIONS_KEY, Tag.TAG_COMPOUND)
                 : new ListTag();
 
+        // * Missing tag means old data or same vocabulary
+        final Vocabulary sourceVocabulary = tag.contains(CableHubBlockEntity.VOCABULARY_KEY, Tag.TAG_STRING)
+                ? Vocabulary.valueOf(tag.getString(CableHubBlockEntity.VOCABULARY_KEY))
+                : Vocabulary.TYPEWRITER;
+
         final List<String> ownChannels = this.getBlockState().getBlock() instanceof final MultiChannelCableSource source
                 ? source.cable$getChannels(this.level, this.getBlockPos())
                 : List.of();
@@ -234,7 +242,8 @@ public class CableTypewriterHubBlockEntity extends LinkedTypewriterBlockEntity {
         for (final Tag entry : connections) {
             if (entry instanceof final CompoundTag connection
                     && connection.contains(CHANNEL_KEY, Tag.TAG_STRING)
-                    && ownChannels.contains(connection.getString(CHANNEL_KEY))) {
+                    && ownChannels.contains(ControllerChannelTranslator.translate(
+                    connection.getString(CHANNEL_KEY), sourceVocabulary, Vocabulary.TYPEWRITER, player.getUUID()))) {
                 anyChannelMatched = true;
                 break;
             }
@@ -263,7 +272,8 @@ public class CableTypewriterHubBlockEntity extends LinkedTypewriterBlockEntity {
 
             final long sinkPos = connection.getLong(SINK_KEY);
             final int direction = connection.getByte(DIRECTION_KEY);
-            final String channel = connection.getString(CHANNEL_KEY);
+            final String channel = ControllerChannelTranslator.translate(
+                    connection.getString(CHANNEL_KEY), sourceVocabulary, Vocabulary.TYPEWRITER, player.getUUID());
             CableNetworkManager.createConnection(
                     this.level,
                     this.getBlockPos(),

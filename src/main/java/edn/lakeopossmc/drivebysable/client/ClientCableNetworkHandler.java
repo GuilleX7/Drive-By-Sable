@@ -1,5 +1,6 @@
 package edn.lakeopossmc.drivebysable.client;
 
+import com.mojang.blaze3d.platform.InputConstants;
 import com.mojang.blaze3d.vertex.PoseStack;
 import com.mojang.blaze3d.vertex.VertexConsumer;
 import com.simibubi.create.AllBlocks;
@@ -16,18 +17,23 @@ import edn.lakeopossmc.drivebysable.cable.CableNetworkManager;
 import edn.lakeopossmc.drivebysable.cable.MultiChannelCableSource;
 import edn.lakeopossmc.drivebysable.cable.graph.CableNetworkNode.CableNetworkSink;
 import edn.lakeopossmc.drivebysable.compat.TweakedControllerCableServerHandler;
+import edn.lakeopossmc.drivebysable.compat.keytranslator.TweakedKeybindResolver;
 import edn.lakeopossmc.drivebysable.items.CableItem;
 import edn.lakeopossmc.drivebysable.items.CableCutterItem;
 import edn.lakeopossmc.drivebysable.mixinducks.TweakedControllerDuck;
 import edn.lakeopossmc.drivebysable.network.CableAddConnectionPacket;
 import edn.lakeopossmc.drivebysable.network.CableNetworkRequestSyncPacket;
+import edn.lakeopossmc.drivebysable.network.MovementKeybindsPacket;
+import edn.lakeopossmc.drivebysable.network.TweakedKeybindsPacket;
 import edn.lakeopossmc.drivebysable.network.CableRemoveConnectionPacket;
 import edn.lakeopossmc.drivebysable.util.BlockFace;
 import edn.lakeopossmc.drivebysable.util.FaceOutlines;
 import net.createmod.catnip.outliner.Outliner;
 import net.createmod.catnip.theme.Color;
 import net.minecraft.ChatFormatting;
+import net.minecraft.client.KeyMapping;
 import net.minecraft.client.Minecraft;
+import net.minecraft.client.Options;
 import net.minecraft.client.renderer.RenderType;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
@@ -49,6 +55,7 @@ import net.minecraft.world.phys.shapes.VoxelShape;
 import net.neoforged.api.distmarker.Dist;
 import net.neoforged.bus.api.SubscribeEvent;
 import net.neoforged.fml.common.EventBusSubscriber;
+import net.neoforged.fml.ModList;
 import net.neoforged.neoforge.client.event.ClientTickEvent;
 import net.neoforged.neoforge.client.event.InputEvent;
 import net.neoforged.neoforge.client.event.RenderHighlightEvent;
@@ -212,6 +219,12 @@ public final class ClientCableNetworkHandler {
         // * Clipboard needs sync request
         if ((holdingCableTool || holdingClipboard) && --syncCooldown <= 0) {
             syncManager();
+            if (holdingClipboard) {
+                sendMovementKeybinds();
+                if (ModList.get().isLoaded("create_tweaked_controllers")) {
+                    sendTweakedKeybinds();
+                }
+            }
         }
 
         if (!holdingCableTool) {
@@ -229,8 +242,7 @@ public final class ClientCableNetworkHandler {
     }
     //#endregion
 
-    //#region // --- WHITE HITBOX ON VALID HOVER TARGET --- //
-    // * Same event and utility create uses for the clipboard target highlight
+    //#region // --- WHITE HITBOX WHILE HOLDING CABLE --- //
     @SubscribeEvent
     public static void onRenderBlockHighlight(final RenderHighlightEvent.Block event) {
         final Minecraft minecraft = Minecraft.getInstance();
@@ -239,7 +251,7 @@ public final class ClientCableNetworkHandler {
             return;
         }
 
-        if (selectedSource != null || !player.getMainHandItem().is(CableItems.CABLE.get())) {
+        if (!player.getMainHandItem().is(CableItems.CABLE.get())) {
             return;
         }
 
@@ -415,6 +427,29 @@ public final class ClientCableNetworkHandler {
     private static void syncManager() {
         PacketDistributor.sendToServer(CableNetworkRequestSyncPacket.INSTANCE);
         syncCooldown = 20;
+    }
+
+    // * Same key mapping fields ControlsUtil reads for the linked controller
+    private static void sendMovementKeybinds() {
+        final Options options = Minecraft.getInstance().options;
+        PacketDistributor.sendToServer(new MovementKeybindsPacket(
+                resolveKeycode(options.keyUp),
+                resolveKeycode(options.keyDown),
+                resolveKeycode(options.keyLeft),
+                resolveKeycode(options.keyRight),
+                resolveKeycode(options.keyJump),
+                resolveKeycode(options.keyShift)
+        ));
+    }
+
+    // * Only called once the mod is confirmed loaded
+    private static void sendTweakedKeybinds() {
+        PacketDistributor.sendToServer(new TweakedKeybindsPacket(TweakedKeybindResolver.resolveAll()));
+    }
+
+    private static int resolveKeycode(final KeyMapping mapping) {
+        final InputConstants.Key key = mapping.getKey();
+        return key.getType() == InputConstants.Type.KEYSYM ? key.getValue() : -1;
     }
 
     // * Falls back to world channel for non multi-channel sources

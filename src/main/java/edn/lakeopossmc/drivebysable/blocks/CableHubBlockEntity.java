@@ -4,10 +4,13 @@ import com.simibubi.create.content.equipment.clipboard.ClipboardCloneable;
 import com.simibubi.create.foundation.blockEntity.SmartBlockEntity;
 import com.simibubi.create.foundation.blockEntity.behaviour.BlockEntityBehaviour;
 import edn.lakeopossmc.drivebysable.CableBlockEntities;
+import edn.lakeopossmc.drivebysable.CableBlocks;
 import edn.lakeopossmc.drivebysable.cable.CableNetworkManager;
 import edn.lakeopossmc.drivebysable.cable.CableServerFeedback;
 import edn.lakeopossmc.drivebysable.cable.MultiChannelCableSource;
 import edn.lakeopossmc.drivebysable.cable.graph.CableNetworkNode.CableNetworkSink;
+import edn.lakeopossmc.drivebysable.compat.keytranslator.ControllerChannelTranslator;
+import edn.lakeopossmc.drivebysable.compat.keytranslator.ControllerChannelTranslator.Vocabulary;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.core.HolderLookup;
@@ -27,6 +30,7 @@ import java.util.Set;
 public class CableHubBlockEntity extends SmartBlockEntity implements ClipboardCloneable {
     public static final String CLIPBOARD_KEY = "drivebysable_hub_connections";
     public static final String CONNECTIONS_KEY = "Connections";
+    public static final String VOCABULARY_KEY = "ChannelVocabulary";
 
     private static final String SINK_KEY = "Sink";
     private static final String DIRECTION_KEY = "Direction";
@@ -34,6 +38,13 @@ public class CableHubBlockEntity extends SmartBlockEntity implements ClipboardCl
 
     public CableHubBlockEntity(final BlockPos pos, final BlockState state) {
         super(CableBlockEntities.CABLE_HUB.get(), pos, state);
+    }
+
+    // * Cable hub speaks linked controller, advanced hub speaks tweaked controller
+    private Vocabulary getVocabulary() {
+        return CableBlocks.ADVANCED_CABLE_HUB != null && this.getBlockState().is(CableBlocks.ADVANCED_CABLE_HUB.get())
+                ? Vocabulary.TWEAKED_CONTROLLER
+                : Vocabulary.LINKED_CONTROLLER;
     }
 
     @Override
@@ -75,6 +86,7 @@ public class CableHubBlockEntity extends SmartBlockEntity implements ClipboardCl
         }
 
         tag.put(CONNECTIONS_KEY, connections);
+        tag.putString(VOCABULARY_KEY, this.getVocabulary().name());
         return true;
     }
 
@@ -92,6 +104,12 @@ public class CableHubBlockEntity extends SmartBlockEntity implements ClipboardCl
                 ? tag.getList(CONNECTIONS_KEY, Tag.TAG_COMPOUND)
                 : new ListTag();
 
+        // * Missing tag means old data or same vocabulary
+        final Vocabulary myVocabulary = this.getVocabulary();
+        final Vocabulary sourceVocabulary = tag.contains(VOCABULARY_KEY, Tag.TAG_STRING)
+                ? Vocabulary.valueOf(tag.getString(VOCABULARY_KEY))
+                : myVocabulary;
+
         final List<String> ownChannels = this.getBlockState().getBlock() instanceof final MultiChannelCableSource source
                 ? source.cable$getChannels(this.level, this.worldPosition)
                 : List.of();
@@ -100,7 +118,8 @@ public class CableHubBlockEntity extends SmartBlockEntity implements ClipboardCl
         for (final Tag entry : connections) {
             if (entry instanceof final CompoundTag connection
                     && connection.contains(CHANNEL_KEY, Tag.TAG_STRING)
-                    && ownChannels.contains(connection.getString(CHANNEL_KEY))) {
+                    && ownChannels.contains(ControllerChannelTranslator.translate(
+                    connection.getString(CHANNEL_KEY), sourceVocabulary, myVocabulary, player.getUUID()))) {
                 anyChannelMatched = true;
                 break;
             }
@@ -128,7 +147,8 @@ public class CableHubBlockEntity extends SmartBlockEntity implements ClipboardCl
 
             final long sinkPos = connection.getLong(SINK_KEY);
             final int direction = connection.getByte(DIRECTION_KEY);
-            final String channel = connection.getString(CHANNEL_KEY);
+            final String channel = ControllerChannelTranslator.translate(
+                    connection.getString(CHANNEL_KEY), sourceVocabulary, myVocabulary, player.getUUID());
             CableNetworkManager.createConnection(
                     this.level,
                     this.worldPosition,
