@@ -21,7 +21,8 @@
     "compat.MixinTypewriterSaveKeyToItemPacket",
     "compat.MixinDriveByWireBlueprintEvent",
     "compat.dashpanels.MixinPanelBlock",
-    "compat.dashpanels.MixinPanelBlockEntity"
+    "compat.dashpanels.MixinPanelBlockEntity",
+    "compat.aeroworks.MixinAeroworksConsoleBlock"
   ],
   "client": [
     "client.MixinLinkedControllerClientHandlerAccessor",

@@ -1,4 +1,4 @@
-package edn.lakeopossmc.drivebysable.client;
+package edn.stratodonut.drivebywire.client;
 
 import com.mojang.blaze3d.platform.InputConstants;
 import com.mojang.blaze3d.vertex.PoseStack;
@@ -73,7 +73,7 @@ import java.util.Set;
 // --- CLIENT SIDE CABLE TOOL LOGIC --- //
 // * Handles selection, connections, outlines, and hover tips
 @EventBusSubscriber(modid = DriveBySableMod.MOD_ID, value = Dist.CLIENT)
-public final class ClientCableNetworkHandler {
+public final class ClientWireNetworkHandler {
     private static final AABB UNIT_CUBE = AABB.unitCubeFromLowerCorner(Vec3.ZERO);
     private static final Map<Long, Map<String, Set<CableNetworkSink>>> EMPTY_NETWORK = Map.of();
 
@@ -84,7 +84,7 @@ public final class ClientCableNetworkHandler {
     private static String pendingSchematicSyncReason;
     private static final List<ScheduledFlash> scheduledFlashes = new ArrayList<>();
 
-    private ClientCableNetworkHandler() {
+    private ClientWireNetworkHandler() {
     }
 
     @SubscribeEvent
@@ -164,7 +164,8 @@ public final class ClientCableNetworkHandler {
             return;
         }
 
-        changeChannel(player.level(), selectedSource, delta > 0);
+        final Block source = player.level().getBlockState(selectedSource).getBlock();
+        changeChannel(source, delta > 0);
         event.setCanceled(true);
     }
 
@@ -309,7 +310,7 @@ public final class ClientCableNetworkHandler {
     private static boolean handleCableUse(final Player player, final ItemStack heldItem, final Level level, final BlockPos pos, final Direction face) {
         if (selectedSource == null) {
             selectedSource = pos.immutable();
-            changeChannel(level, selectedSource, true);
+            changeChannel(level.getBlockState(pos).getBlock(), true);
             syncManager();
             return true;
         }
@@ -345,7 +346,7 @@ public final class ClientCableNetworkHandler {
             }
 
             selectedSource = pos.immutable();
-            changeChannel(level, selectedSource, true);
+            changeChannel(level.getBlockState(pos).getBlock(), true);
             syncManager();
             return true;
         }
@@ -452,11 +453,17 @@ public final class ClientCableNetworkHandler {
         return key.getType() == InputConstants.Type.KEYSYM ? key.getValue() : -1;
     }
 
+    // --- REWRITTEN TO WORK AS COMPAT SHIM --- //
+    // * Aeroworks @Inject targets this by name
     // * Falls back to world channel for non multi-channel sources
-    private static void changeChannel(final Level level, final BlockPos pos, final boolean forward) {
-        final Block source = level.getBlockState(pos).getBlock();
+    private static void changeChannel(final Block source, final boolean forward) {
+        final Level level = Minecraft.getInstance().level;
+        if (level == null || selectedSource == null) {
+            return;
+        }
+
         currentChannel = source instanceof MultiChannelCableSource channelSource
-                ? channelSource.cable$nextChannel(level, pos, currentChannel, forward)
+                ? channelSource.cable$nextChannel(level, selectedSource, currentChannel, forward)
                 : CableNetworkManager.WORLD_CHANNEL;
 
         if (currentChannel == null) {
@@ -467,7 +474,7 @@ public final class ClientCableNetworkHandler {
         if (player != null) {
             // * Look up display name, fall back to raw channel id
             String langKey = TweakedControllerCableServerHandler.CHANNEL_TO_LANG_KEY
-                    .getOrDefault(currentChannel,currentChannel);
+                    .getOrDefault(currentChannel, currentChannel);
             Component displayName = Component.translatable(langKey);
             player.displayClientMessage(
                     Component.translatable("drivebysable.cable.channel.selected", displayName),

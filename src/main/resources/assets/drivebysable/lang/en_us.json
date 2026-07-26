@@ -129,6 +129,8 @@
   "drivebysable.controller.key.jump": "keyJump",
   "drivebysable.controller.key.shift": "keyShift",
 
+  "drivebywire.wire.channel.selected": "Selected Channel: %s",
+
   "drivebysable.configuration.shouldConsumeCables": "Consumable Wires",
   "drivebysable.configuration.shouldConsumeCables.tooltip": "Whether or not wires should be consumed upon use when in survival mode."
 }
