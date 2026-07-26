@@ -19,6 +19,7 @@
     "compat.tweaked.MixinTweakedControllerStopLecternPacket",
     "compat.MixinLinkedTypewriterItemBindHandler",
     "compat.MixinTypewriterSaveKeyToItemPacket",
+    "compat.MixinDriveByWireBlueprintEvent",
     "compat.dashpanels.MixinPanelBlock",
     "compat.dashpanels.MixinPanelBlockEntity"
   ],

@@ -19,35 +19,32 @@ license="MIT"
 
 # A list of mods - how many allowed here is determined by the individual mod loader
 [[mods]] #mandatory
-
 # The modid of the mod
 modId="drivebysable" #mandatory
-
 # The version number of the mod
-version="1.2.0" #mandatory
-
+version="1.2.1" #mandatory
 # A display name for the mod
 displayName="Drive-By-Sable" #mandatory
-
 # A URL to query for updates for this mod. See the JSON update specification https://docs.neoforged.net/docs/misc/updatechecker/
 #updateJSONURL="https://change.me.example.invalid/updates.json" #optional
-
 # A URL for the "homepage" for this mod, displayed in the mod UI
 #displayURL="https://change.me.to.your.mods.homepage.example.invalid/" #optional
-
 # A file name (in the root of the mod JAR) containing a logo for display
 #logoFile="examplemod.png" #optional
-
 # A text field displayed in the mod UI
 credits="A fork of Drive-By-Wire with Sable."
-
 # The authors of the mod, displayed in the mod UI (optional)
 authors="lakeOpossMC"
-
 # The description text for the mod (multi line!) (#mandatory)
 description='''
 A version of Drive-By-Wire that works with the Sable physics environment.
 '''
+
+[[mods]]
+modId="drivebywire"
+version="1.2.1"
+displayName="Drive-By-Wire (compat shim)"
+description='''Identity so mods built against the og Drive-By-Wire, which is incompatible with Drive-By-Sable, detect it as present.'''
 
 # The [[mixins]] block allows you to declare your mixin config to FML so that it gets loaded.
 [[mixins]]
@@ -111,6 +108,13 @@ config="${mod_id}.mixins.json"
 
 [[dependencies."drivebysable"]]
     modId="simulated"
+    type="optional"
+    versionRange="[0,)"
+    ordering="AFTER"
+    side="BOTH"
+
+[[dependencies."drivebysable"]]
+    modId="sable_schematic_api"
     type="optional"
     versionRange="[0,)"
     ordering="AFTER"
