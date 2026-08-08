@@ -5,9 +5,12 @@ import edn.lakeopossmc.drivebysable.compat.LinkedControllerCableServerHandler;
 import edn.lakeopossmc.drivebysable.compat.TweakedControllerCableServerHandler;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
+import net.minecraft.server.MinecraftServer;
+import net.minecraft.server.TickTask;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.level.Level;
+import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.state.BlockState;
 import net.neoforged.bus.api.SubscribeEvent;
 import net.neoforged.neoforge.event.level.BlockEvent;
@@ -78,13 +81,33 @@ public final class CableCommonEvents {
     // * Sublevel assembly moves are remapped instead
     @SubscribeEvent
     public static void onBlockBreak(final BlockEvent.BreakEvent event) {
-        if (event.getLevel() instanceof final ServerLevel level) {
-            if (CableNetworkManager.isPendingAssembly(level, event.getPos())) {
+        if (!(event.getLevel() instanceof final ServerLevel level)) {
+            return;
+        }
+
+        final BlockPos pos = event.getPos().immutable();
+        if (CableNetworkManager.isPendingAssembly(level, pos)) {
+            return;
+        }
+
+        final ServerPlayer player = event.getPlayer() instanceof final ServerPlayer serverPlayer ? serverPlayer : null;
+        final Block brokenBlock = event.getState().getBlock();
+        final MinecraftServer server = level.getServer();
+
+        if (server == null) {
+            CableNetworkManager.get(level).removeAllFromSourceInternal(player, level, pos);
+            return;
+        }
+
+        server.tell(new TickTask(server.getTickCount() + 1, () -> {
+            // * Break was intercepted, nothing to disconnect
+            if (level.getBlockState(pos).is(brokenBlock)) {
                 return;
             }
-
-            final ServerPlayer player = event.getPlayer() instanceof final ServerPlayer serverPlayer ? serverPlayer : null;
-            CableNetworkManager.get(level).removeAllFromSourceInternal(player, level, event.getPos());
-        }
+            if (CableNetworkManager.isPendingAssembly(level, pos)) {
+                return;
+            }
+            CableNetworkManager.get(level).removeAllFromSourceInternal(player, level, pos);
+        }));
     }
 }
