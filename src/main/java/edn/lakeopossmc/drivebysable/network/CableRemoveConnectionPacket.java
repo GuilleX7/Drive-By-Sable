@@ -17,15 +17,29 @@ import net.minecraft.world.item.ItemStack;
 import net.neoforged.neoforge.network.handling.IPayloadContext;
 
 // --- CLIENT ASKS SERVER TO DROP A CONNECTION --- //
-public record CableRemoveConnectionPacket(BlockPos source, BlockPos sink, Direction direction, String channel) implements CustomPacketPayload {
+// * sinkChannel is empty for a plain block face and names a module otherwise
+public record CableRemoveConnectionPacket(
+        BlockPos source,
+        BlockPos sink,
+        Direction direction,
+        String channel,
+        String sinkChannel
+) implements CustomPacketPayload {
     public static final Type<CableRemoveConnectionPacket> TYPE = new Type<>(DriveBySableMod.asResource("wire_remove_connection"));
     public static final StreamCodec<ByteBuf, CableRemoveConnectionPacket> STREAM_CODEC = StreamCodec.composite(
             BlockPos.STREAM_CODEC, CableRemoveConnectionPacket::source,
             BlockPos.STREAM_CODEC, CableRemoveConnectionPacket::sink,
             ByteBufCodecs.VAR_INT, packet -> packet.direction().get3DDataValue(),
             ByteBufCodecs.STRING_UTF8, CableRemoveConnectionPacket::channel,
-            (source, sink, direction, channel) -> new CableRemoveConnectionPacket(source, sink, Direction.from3DDataValue(direction), channel)
+            ByteBufCodecs.STRING_UTF8, CableRemoveConnectionPacket::sinkChannel,
+            (source, sink, direction, channel, sinkChannel) ->
+                    new CableRemoveConnectionPacket(source, sink, Direction.from3DDataValue(direction), channel, sinkChannel)
     );
+
+    // * Convenience for the block face case
+    public CableRemoveConnectionPacket(final BlockPos source, final BlockPos sink, final Direction direction, final String channel) {
+        this(source, sink, direction, channel, "");
+    }
 
     @Override
     public Type<CableRemoveConnectionPacket> type() {
@@ -38,7 +52,14 @@ public record CableRemoveConnectionPacket(BlockPos source, BlockPos sink, Direct
             return;
         }
 
-        if (CableNetworkManager.removeConnection(player.level(), payload.source(), payload.sink(), payload.direction(), payload.channel())) {
+        if (CableNetworkManager.removeConnection(
+                player.level(),
+                payload.source(),
+                payload.sink(),
+                payload.direction(),
+                payload.channel(),
+                payload.sinkChannel()
+        )) {
             if (CableConfig.CONFIG.shouldConsumeCables.get() && !player.hasInfiniteMaterials()) {
                 final ItemStack cable = new ItemStack(CableItems.CABLE.get());
                 if (!player.addItem(cable)) {
