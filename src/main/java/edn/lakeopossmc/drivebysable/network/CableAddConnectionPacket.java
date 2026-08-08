@@ -18,15 +18,29 @@ import net.minecraft.world.InteractionHand;
 import net.neoforged.neoforge.network.handling.IPayloadContext;
 
 // --- CLIENT ASKS SERVER TO ADD A CONNECTION --- //
-public record CableAddConnectionPacket(BlockPos source, BlockPos sink, Direction direction, String channel) implements CustomPacketPayload {
+// * sinkChannel is empty for a plain block face and names a module otherwise
+public record CableAddConnectionPacket(
+    BlockPos source,
+    BlockPos sink,
+    Direction direction,
+    String channel,
+    String sinkChannel
+) implements CustomPacketPayload {
     public static final Type<CableAddConnectionPacket> TYPE = new Type<>(DriveBySableMod.asResource("wire_add_connection"));
     public static final StreamCodec<ByteBuf, CableAddConnectionPacket> STREAM_CODEC = StreamCodec.composite(
         BlockPos.STREAM_CODEC, CableAddConnectionPacket::source,
         BlockPos.STREAM_CODEC, CableAddConnectionPacket::sink,
         ByteBufCodecs.VAR_INT, packet -> packet.direction().get3DDataValue(),
         ByteBufCodecs.STRING_UTF8, CableAddConnectionPacket::channel,
-        (source, sink, direction, channel) -> new CableAddConnectionPacket(source, sink, Direction.from3DDataValue(direction), channel)
+        ByteBufCodecs.STRING_UTF8, CableAddConnectionPacket::sinkChannel,
+        (source, sink, direction, channel, sinkChannel) ->
+            new CableAddConnectionPacket(source, sink, Direction.from3DDataValue(direction), channel, sinkChannel)
     );
+
+    // * Convenience for the block face case
+    public CableAddConnectionPacket(final BlockPos source, final BlockPos sink, final Direction direction, final String channel) {
+        this(source, sink, direction, channel, "");
+    }
 
     @Override
     public Type<CableAddConnectionPacket> type() {
@@ -44,7 +58,8 @@ public record CableAddConnectionPacket(BlockPos source, BlockPos sink, Direction
             payload.source(),
             payload.sink(),
             payload.direction(),
-            payload.channel()
+            payload.channel(),
+            payload.sinkChannel()
         );
         if (result.isSuccess()) {
             player.level().playSound(null, payload.sink(), CableSounds.PLUG_IN.get(), SoundSource.BLOCKS, 1.0F, 1.0F);
