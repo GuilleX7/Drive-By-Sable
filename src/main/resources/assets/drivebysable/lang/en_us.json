@@ -1,29 +1,35 @@
 {
-  "itemGroup.drivebysable" : "Drive-By-Sable",
+  "itemGroup.drivebysable": "Drive-By-Sable",
   "itemGroup.drivebysable.drivebysable_section": "Drive-By-Sable",
-  
-  "block.drivebysable.backup_drive" : "Network Backup Drive",
-  "block.drivebysable.cable_hub" : "Cable Hub",
-  "block.drivebysable.advanced_cable_hub" : "Advanced Cable Hub",
-  "block.drivebysable.cable_typewriter_hub" : "Typewriter Cable Hub",
-  
-  "item.drivebysable.cable" : "Cable",
-  "item.drivebysable.cable_cutter" : "Cable Cutter",
+
+  "block.drivebysable.backup_drive": "Network Backup Drive",
+  "block.drivebysable.cable_hub": "Cable Hub",
+  "block.drivebysable.advanced_cable_hub": "Advanced Cable Hub",
+  "block.drivebysable.cable_typewriter_hub": "Typewriter Cable Hub",
+
+  "item.drivebysable.cable": "Cable",
+  "item.drivebysable.cable_cutter": "Cable Cutter",
   "item.drivebysable.cable_io_bus": "Cable I/O Bus",
   "item.drivebysable.incomplete_cable_io_bus": "Incomplete Cable I/O Bus",
 
-  "subtitle.drivebysable.plug.in" : "Cable connected",
-  "subtitle.drivebysable.plug.out" : "Cable disconnected",
+  "subtitle.drivebysable.plug.in": "Cable connected",
+  "subtitle.drivebysable.plug.out": "Cable disconnected",
   "drivebysable.typewriter_hub.start_controlling": "Now controlling Typewriter Cable Hub",
   "drivebysable.typewriter_hub.stop_controlling": "Stopped controlling Typewriter Cable Hub",
   "drivebysable.invalid_op.no_connections": "Invalid Operation: No Cable Connections at this Network Source.",
   "drivebysable.invalid_op.invalid_paste": "Invalid Operation: Matching Output Channels not found.",
+  "drivebysable.invalid_op.not_a_source": "Invalid Operation: This Module cannot act as a Source.",
+  "drivebysable.invalid_op.not_an_output": "Invalid Operation: This Module cannot act as an Output.",
+  "drivebysable.invalid_op.no_output_channels": "Invalid Operation: This Module has no Output Channels.",
 
   "drivebysable.cable_actions.header": "Cable Actions",
   "drivebysable.cable_actions.enter_setup": "%s to enter Setup Mode",
   "drivebysable.cable_actions.exit_setup": "%s to exit Setup Mode",
   "drivebysable.cable_actions.select_channel": "Scroll to select Channel",
   "drivebysable.cable_actions.toggle_output": "%s to add or remove Output",
+  "drivebysable.cable_actions.select_output_channel": "Scroll to select Output Channel",
+  "drivebysable.cable_actions.confirm_output": "%s to confirm Output",
+  "drivebysable.cable_actions.choose_output_channel": "%s to choose Output Channel",
 
   "item.drivebysable.cable.tooltip.summary": "Connects _redstone input sources_ to any number of _outputs_",
 
@@ -44,7 +50,7 @@
   "block.drivebysable.cable_typewriter_hub.tooltip.condition4": "When connected via Cable",
   "block.drivebysable.cable_typewriter_hub.tooltip.behaviour4": "Outputs a _redstone signal_ on the matching _cable channel_ whenever that key is pressed.",
 
-  "block.drivebysable.backup_drive.tooltip.summary" : "Saves _same-sublevel cable connections_ into _schematics_ and restores them when the schematic is loaded",
+  "block.drivebysable.backup_drive.tooltip.summary": "Saves _same-sublevel cable connections_ into _schematics_ and restores them when the schematic is loaded",
 
   "drivebysable.ponder.tag.main": "Cable Networking Tools",
   "drivebysable.ponder.tag.main.description": "Cable-based redstone networking, no frequencies required",
@@ -96,6 +102,7 @@
   "drivebysable.ponder.typewriter_hub_intro.text_10": "Use the Cable on the hub again to exit setup mode",
 
   "drivebysable.cable.channel.selected": "Selected Channel: %s",
+  "drivebysable.cable.output_channel.selected": "Output Channel: %s",
   "drivebysable.controller.button.a": "Button A",
   "drivebysable.controller.button.b": "Button B",
   "drivebysable.controller.button.x": "Button X",
@@ -128,8 +135,6 @@
   "drivebysable.controller.key.right": "keyRight",
   "drivebysable.controller.key.jump": "keyJump",
   "drivebysable.controller.key.shift": "keyShift",
-
-  "drivebywire.wire.channel.selected": "Selected Channel: %s",
 
   "drivebysable.configuration.shouldConsumeCables": "Consumable Wires",
   "drivebysable.configuration.shouldConsumeCables.tooltip": "Whether or not wires should be consumed upon use when in survival mode."

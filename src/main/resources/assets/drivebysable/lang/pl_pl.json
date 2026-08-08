@@ -119,8 +119,6 @@
   "drivebysable.controller.key.jump": "Skok",
   "drivebysable.controller.key.shift": "Skradanie",
 
-  "drivebywire.wire.channel.selected": "Wybrany Kanał: %s",
-
   "drivebysable.configuration.shouldConsumeCables": "Zużywalne Kable",
   "drivebysable.configuration.shouldConsumeCables.tooltip": "Określa, czy kable powinny być zużywane podczas użycia w trybie przetrwania."
 }

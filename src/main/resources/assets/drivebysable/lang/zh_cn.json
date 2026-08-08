@@ -119,8 +119,6 @@
   "drivebysable.controller.key.jump": "跳跃",
   "drivebysable.controller.key.shift": "潜行",
 
-  "drivebywire.wire.channel.selected": "已选通道：%s",
-
   "drivebysable.configuration.shouldConsumeCables": "消耗性电缆",
   "drivebysable.configuration.shouldConsumeCables.tooltip": "在生存模式下使用电缆时是否应消耗电缆。"
 }
