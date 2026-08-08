@@ -40,12 +40,6 @@ description='''
 A version of Drive-By-Wire that works with the Sable physics environment.
 '''
 
-[[mods]]
-modId="drivebywire"
-version="1.2.2"
-displayName="Drive-By-Wire (compat shim)"
-description='''Identity so mods built against the og Drive-By-Wire, which is incompatible with Drive-By-Sable, detect it as present.'''
-
 # The [[mixins]] block allows you to declare your mixin config to FML so that it gets loaded.
 [[mixins]]
 config="${mod_id}.mixins.json"
@@ -104,6 +98,13 @@ config="${mod_id}.mixins.json"
     type="optional"
     versionRange="[0,)"
     ordering="AFTER"
+    side="BOTH"
+
+[[dependencies."drivebysable"]]
+    modId="offroad"
+    type="optional"
+    versionRange="[0,)"
+    ordering="BEFORE"
     side="BOTH"
 
 [[dependencies."drivebysable"]]
