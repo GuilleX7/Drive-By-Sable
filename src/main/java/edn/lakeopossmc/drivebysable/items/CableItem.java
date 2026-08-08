@@ -1,7 +1,7 @@
 package edn.lakeopossmc.drivebysable.items;
 
 import com.simibubi.create.foundation.item.TooltipHelper;
-import edn.stratodonut.drivebywire.client.ClientWireNetworkHandler;
+import edn.lakeopossmc.drivebysable.client.ClientCableNetworkHandler;
 import net.minecraft.ChatFormatting;
 import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.network.chat.Component;
@@ -31,7 +31,7 @@ public class CableItem extends Item {
     // * Glint while a source is selected
     @Override
     public boolean isFoil(final ItemStack stack) {
-        return FMLLoader.getDist() == Dist.CLIENT && ClientWireNetworkHandler.isInSetupMode();
+        return FMLLoader.getDist() == Dist.CLIENT && ClientCableNetworkHandler.isInSetupMode();
     }
 
     @Override
