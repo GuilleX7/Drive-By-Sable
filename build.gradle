@@ -192,6 +192,9 @@ dependencies {
     localRuntime(files("libs/simulated-neoforge-1.21.1-1.3.0.jar"))
 
     // Sable Photomancy
+    compileOnly(files("libs/synaxis-1.5.0.jar"))
+    localRuntime(files("libs/synaxis-1.5.0.jar"))
+
     compileOnly(files("libs/sable-photomancy-1.0.0.jar"))
     localRuntime(files("libs/sable-photomancy-1.0.0.jar"))
 

@@ -1,6 +1,7 @@
 package edn.lakeopossmc.drivebysable.compat;
 
 import edn.lakeopossmc.drivebysable.cable.CableNetworkManager;
+import edn.lakeopossmc.drivebysable.compat.synaxis.SynaxisCableBridge;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.world.level.Level;
@@ -45,6 +46,27 @@ public final class CableRedstoneCompat {
         return signal;
     }
 
+    // * Synaxis controller wire, split by convention
+    public static int controllerWireForForwardQuery(
+            final Level level,
+            final BlockPos queriedPos,
+            final Direction queriedDirection
+    ) {
+        return SynaxisCableBridge.isLoaded()
+                ? SynaxisCableBridge.controllerWireSignalForForwardQuery(level, queriedPos, queriedDirection)
+                : 0;
+    }
+
+    public static int controllerWireForReversedQuery(
+            final Level level,
+            final BlockPos queriedPos,
+            final Direction queriedDirection
+    ) {
+        return SynaxisCableBridge.isLoaded()
+                ? SynaxisCableBridge.controllerWireSignalForReversedQuery(level, queriedPos, queriedDirection)
+                : 0;
+    }
+
     // * For per mod redirects on consumers that use the reversed convention
     public static int getSignalIncludingReverseCable(
             final Level level,
@@ -52,8 +74,11 @@ public final class CableRedstoneCompat {
             final Direction queriedDirection
     ) {
         return Math.max(
-                vanillaSignalOnly(level, queriedPos, queriedDirection),
-                cableSignalForReversedQuery(level, queriedPos, queriedDirection)
+                Math.max(
+                        vanillaSignalOnly(level, queriedPos, queriedDirection),
+                        cableSignalForReversedQuery(level, queriedPos, queriedDirection)
+                ),
+                controllerWireForReversedQuery(level, queriedPos, queriedDirection)
         );
     }
 }

@@ -53,6 +53,9 @@ public abstract class MixinServerLevel extends Level {
         }
 
         // * Forward lookup only
-        return Math.max(signal, CableRedstoneCompat.cableSignalForForwardQuery(this, pos, direction));
+        signal = Math.max(signal, CableRedstoneCompat.cableSignalForForwardQuery(this, pos, direction));
+
+        // * Synaxis injects this same blend into Drive-By-Wire's MixinServerLevel
+        return Math.max(signal, CableRedstoneCompat.controllerWireForForwardQuery(this, pos, direction));
     }
 }
