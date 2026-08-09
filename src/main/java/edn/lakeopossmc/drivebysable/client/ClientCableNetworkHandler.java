@@ -325,7 +325,7 @@ public final class ClientCableNetworkHandler {
                 && minecraft.hitResult.getType() == HitResult.Type.BLOCK) {
             final BlockPos hoverPos = hover.getBlockPos();
             final String hoverModule = pickSubTarget(level, hoverPos, player);
-            if (hoverModule != null && isHoverBlocked(level, hoverPos)) {
+            if (hoverModule != null && isHoverBlocked(level, hoverPos, player)) {
                 drawModuleOutline(level, hoverPos, hoverModule, "cableOutOfRange", OUT_OF_RANGE_COLOR);
             }
         }
@@ -368,7 +368,7 @@ public final class ClientCableNetworkHandler {
         poseStack.pushPose();
         poseStack.translate(pos.getX() - camera.x, pos.getY() - camera.y, pos.getZ() - camera.z);
 
-        if (isHoverBlocked(level, pos)) {
+        if (isHoverBlocked(level, pos, player)) {
             renderShapeEdges(shape, poseStack, event.getMultiBufferSource().getBuffer(RenderType.lines()), OUT_OF_RANGE_COLOR, 0.6F);
         } else {
             TrackBlockOutline.renderShape(shape, poseStack, event.getMultiBufferSource().getBuffer(RenderType.lines()), true);
@@ -379,7 +379,12 @@ public final class ClientCableNetworkHandler {
     }
 
     // * Only meaningful once a source is picked
-    private static boolean isHoverBlocked(final Level level, final BlockPos pos) {
+    private static boolean isHoverBlocked(final Level level, final BlockPos pos, final Player player) {
+        // * Bare surface of a module bearing block is never a valid target
+        if (missingRequiredSubTarget(level, pos, player)) {
+            return true;
+        }
+
         if (selectedSource == null) {
             return CableNetworkManager.wouldExceedSourceLimit(level, pos);
         }
@@ -478,6 +483,16 @@ public final class ClientCableNetworkHandler {
     //#region // --- SUB TARGET LOOKUPS --- //
     // * Which module the crosshair is on
     @Nullable
+    // * Blocks made of separately targetable parts accept connections on those parts only
+    private static boolean requiresSubTarget(final Level level, final BlockPos pos) {
+        return level.getBlockState(pos).getBlock() instanceof SubTargetCableEndpoint;
+    }
+
+    // * True when the crosshair is on bare surface of such a block
+    private static boolean missingRequiredSubTarget(final Level level, final BlockPos pos, final Player player) {
+        return requiresSubTarget(level, pos) && pickSubTarget(level, pos, player) == null;
+    }
+
     private static String pickSubTarget(final Level level, final BlockPos pos, final Player player) {
         return level.getBlockState(pos).getBlock() instanceof final SubTargetCableEndpoint endpoint
                 ? endpoint.cable$pickSubTarget(level, pos, player)
@@ -526,6 +541,12 @@ public final class ClientCableNetworkHandler {
     // * Otherwise the click either toggles a connection outright, or arms a multi channel output
     private static boolean handleCableUse(final Player player, final ItemStack heldItem, final Level level, final BlockPos pos, final Direction face) {
         final String subTarget = pickSubTarget(level, pos, player);
+
+        // * Refuse the bare surface outright
+        if (subTarget == null && requiresSubTarget(level, pos)) {
+            showInvalidOperationMessage(player, "drivebysable.invalid_op.module_required");
+            return false;
+        }
 
         // * Nothing selected yet
         if (selectedSource == null) {
@@ -591,6 +612,12 @@ public final class ClientCableNetworkHandler {
     // * Same as cable but blocks selecting a source with no connections
     private static boolean handleCutterUse(final Player player, final Level level, final BlockPos pos, final Direction face) {
         final String subTarget = pickSubTarget(level, pos, player);
+
+        // * Refuse the bare surface outright
+        if (subTarget == null && requiresSubTarget(level, pos)) {
+            showInvalidOperationMessage(player, "drivebysable.invalid_op.module_required");
+            return false;
+        }
 
         if (selectedSource == null) {
             if (!hasConnections(pos)) {
@@ -790,6 +817,14 @@ public final class ClientCableNetworkHandler {
 
         final HitResult hitResult = minecraft.hitResult;
         final boolean hitBlock = hitResult instanceof BlockHitResult && hitResult.getType() == HitResult.Type.BLOCK;
+
+        // * Says why the bare panel is refused, before the click rather than after
+        if (hitBlock && missingRequiredSubTarget(level, ((BlockHitResult) hitResult).getBlockPos(), player)) {
+            tip.add(Component.translatable("drivebysable.cable_actions.module_required")
+                    .withStyle(net.minecraft.ChatFormatting.RED));
+            CreateClient.VALUE_SETTINGS_HANDLER.showHoverTip(tip);
+            return;
+        }
 
         if (selectedSource == null) {
             if (!hitBlock) {
