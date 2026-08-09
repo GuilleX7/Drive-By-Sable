@@ -43,6 +43,7 @@ import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.network.chat.Component;
 import net.minecraft.network.chat.MutableComponent;
+import net.minecraft.sounds.SoundEvents;
 import net.minecraft.sounds.SoundSource;
 import net.minecraft.util.Mth;
 import net.minecraft.world.InteractionHand;
@@ -226,7 +227,16 @@ public final class ClientCableNetworkHandler {
             }
         }
 
+        final ItemStack mainHand = player.getMainHandItem();
+        final boolean holdingCableTool = mainHand.is(CableItems.CABLE.get()) || mainHand.is(CableItems.CABLE_CUTTER.get());
+        final boolean holdingClipboard = AllBlocks.CLIPBOARD.isIn(mainHand);
+
+        // * Only meaningful while a source is selected
         while (CableKeyMappings.HIDE_INACTIVE_CHANNELS.consumeClick()) {
+            if (!holdingCableTool || selectedSource == null) {
+                continue;
+            }
+
             hideInactiveChannels = !hideInactiveChannels;
             player.displayClientMessage(
                     Component.translatable(
@@ -238,11 +248,22 @@ public final class ClientCableNetworkHandler {
                     ).withStyle(ChatFormatting.GRAY),
                     true
             );
-        }
 
-        final ItemStack mainHand = player.getMainHandItem();
-        final boolean holdingCableTool = mainHand.is(CableItems.CABLE.get()) || mainHand.is(CableItems.CABLE_CUTTER.get());
-        final boolean holdingClipboard = AllBlocks.CLIPBOARD.isIn(mainHand);
+            // * Local only, nobody else needs to hear a view filter
+            final BlockPos soundPos = player.blockPosition();
+            player.level().playLocalSound(
+                    soundPos.getX() + 0.5,
+                    soundPos.getY() + 0.5,
+                    soundPos.getZ() + 0.5,
+                    hideInactiveChannels
+                            ? SoundEvents.COPPER_BULB_TURN_OFF
+                            : SoundEvents.COPPER_BULB_TURN_ON,
+                    SoundSource.PLAYERS,
+                    0.7F,
+                    1.0F,
+                    false
+            );
+        }
 
         // * Clipboard needed for the empty source copy check
         if (holdingCableTool || holdingClipboard || pendingSchematicSyncReason != null) {
