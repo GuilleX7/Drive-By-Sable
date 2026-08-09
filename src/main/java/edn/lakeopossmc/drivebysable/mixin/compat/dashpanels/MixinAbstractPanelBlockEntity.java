@@ -1,7 +1,7 @@
 package edn.lakeopossmc.drivebysable.mixin.compat.dashpanels;
 
 import edn.lakeopossmc.drivebysable.compat.dashpanels.DashPanelCableBridge;
-import moth.boxxed.panels.content.panel.PanelBlockEntity;
+import moth.boxxed.panels.api.panel.AbstractPanelBlockEntity;
 import net.minecraft.core.BlockPos;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.level.block.state.BlockState;
@@ -12,10 +12,11 @@ import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 
 // --- HOOK PANEL TICK FOR CABLE BRIDGE --- //
-// * Pseudo since mod may not be loaded
+// * Pseudo since the mod may not be loaded
+// * Dashpanels 2.x moved tick onto the abstract base
 @Pseudo
-@Mixin(PanelBlockEntity.class)
-public abstract class MixinPanelBlockEntity {
+@Mixin(AbstractPanelBlockEntity.class)
+public abstract class MixinAbstractPanelBlockEntity {
     @Inject(method = "tick", at = @At("TAIL"))
     private void drivebysable$tickCableBridge(
             final Level level,
@@ -23,6 +24,6 @@ public abstract class MixinPanelBlockEntity {
             final BlockState blockState,
             final CallbackInfo ci
     ) {
-        DashPanelCableBridge.tick(level, blockPos, (PanelBlockEntity) (Object) this);
+        DashPanelCableBridge.tick(level, blockPos, (AbstractPanelBlockEntity) (Object) this);
     }
 }

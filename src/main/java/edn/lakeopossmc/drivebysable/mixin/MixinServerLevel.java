@@ -1,6 +1,7 @@
 package edn.lakeopossmc.drivebysable.mixin;
 
 import edn.lakeopossmc.drivebysable.cable.CableNetworkManager;
+import edn.lakeopossmc.drivebysable.compat.CableRedstoneCompat;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.core.Holder;
@@ -20,26 +21,26 @@ import java.util.function.Supplier;
 @Mixin(ServerLevel.class)
 public abstract class MixinServerLevel extends Level {
     protected MixinServerLevel(
-        final WritableLevelData levelData,
-        final ResourceKey<Level> dimension,
-        final RegistryAccess registryAccess,
-        final Holder<DimensionType> dimensionTypeRegistration,
-        final Supplier<ProfilerFiller> profilerSupplier,
-        final boolean isClientSide,
-        final boolean isDebug,
-        final long biomeZoomSeed,
-        final int maxChainedNeighborUpdates
+            final WritableLevelData levelData,
+            final ResourceKey<Level> dimension,
+            final RegistryAccess registryAccess,
+            final Holder<DimensionType> dimensionTypeRegistration,
+            final Supplier<ProfilerFiller> profilerSupplier,
+            final boolean isClientSide,
+            final boolean isDebug,
+            final long biomeZoomSeed,
+            final int maxChainedNeighborUpdates
     ) {
         super(
-            levelData,
-            dimension,
-            registryAccess,
-            dimensionTypeRegistration,
-            profilerSupplier,
-            isClientSide,
-            isDebug,
-            biomeZoomSeed,
-            maxChainedNeighborUpdates
+                levelData,
+                dimension,
+                registryAccess,
+                dimensionTypeRegistration,
+                profilerSupplier,
+                isClientSide,
+                isDebug,
+                biomeZoomSeed,
+                maxChainedNeighborUpdates
         );
     }
 
@@ -51,7 +52,7 @@ public abstract class MixinServerLevel extends Level {
             signal = Math.max(signal, this.getDirectSignalTo(pos));
         }
 
-        final BlockPos target = pos.relative(direction.getOpposite());
-        return Math.max(signal, CableNetworkManager.get(this).getSignalAt(target, direction));
+        // * Forward lookup only
+        return Math.max(signal, CableRedstoneCompat.cableSignalForForwardQuery(this, pos, direction));
     }
 }

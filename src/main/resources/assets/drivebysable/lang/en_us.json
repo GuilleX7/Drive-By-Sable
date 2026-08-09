@@ -1,6 +1,7 @@
 {
   "itemGroup.drivebysable": "Drive-By-Sable",
   "itemGroup.drivebysable.drivebysable_section": "Drive-By-Sable",
+  "key.categories.drivebysable": "Drive-By-Sable",
 
   "block.drivebysable.backup_drive": "Network Backup Drive",
   "block.drivebysable.cable_hub": "Cable Hub",
@@ -21,12 +22,30 @@
   "drivebysable.invalid_op.not_a_source": "Invalid Operation: This Module cannot act as a Source.",
   "drivebysable.invalid_op.not_an_output": "Invalid Operation: This Module cannot act as an Output.",
   "drivebysable.invalid_op.no_output_channels": "Invalid Operation: This Module has no Output Channels.",
+  "drivebysable.invalid_op.cable_removal_disabled": "Invalid Operation: Cables cannot remove Connections. Use a Cable Cutter.",
+  "drivebysable.invalid_op.out_of_range": "Invalid Operation: This Output location is out of range.",
+  "drivebysable.invalid_op.cross_level": "Invalid Operation: Range limit disables cross-level Connections.",
+  "drivebysable.invalid_op.same_block": "Invalid Operation: Source and Output must be different endpoints.",
+  "drivebysable.invalid_op.too_many_sources_world": "Invalid Operation: Maximum number of Cable Sources reached in the world.",
+  "drivebysable.invalid_op.too_many_sources_sublevel": "Invalid Operation: Maximum number of Cable Sources reached inside this Sub-Level.",
+  "drivebysable.invalid_op.too_many_sinks": "Invalid Operation: Maximum number of Outputs reached on this Channel.",
+  "drivebysable.invalid_op.connection_exists": "Invalid Operation: This Connection already exists.",
+  "drivebysable.invalid_op.stale_source_channel": "Invalid Operation: This Channel is no longer available on this Source.",
+  "drivebysable.invalid_op.stale_output_channel": "Invalid Operation: This Channel is no longer available on this Output.",
 
   "drivebysable.cable_actions.header": "Cable Actions",
   "drivebysable.cable_actions.enter_setup": "%s to enter Setup Mode",
   "drivebysable.cable_actions.exit_setup": "%s to exit Setup Mode",
   "drivebysable.cable_actions.select_channel": "Scroll to select Channel",
   "drivebysable.cable_actions.toggle_output": "%s to add or remove Output",
+  "drivebysable.cable_actions.add_output": "%s to add Output",
+  "drivebysable.cable_actions.out_of_range": "Out of range",
+  "drivebysable.cable_actions.cross_level": "Cross-level connection blocked",
+  "drivebysable.cable_actions.source_limit_reached": "Source limit reached",
+  "drivebysable.cable_actions.output_limit_reached": "Output limit reached on this Channel",
+  "drivebysable.cable_actions.inactive_channels": "Inactive Channel Connections: %s",
+  "drivebysable.cable_actions.hidden": "Hidden",
+  "drivebysable.cable_actions.shown": "Shown",
   "drivebysable.cable_actions.select_output_channel": "Scroll to select Output Channel",
   "drivebysable.cable_actions.confirm_output": "%s to confirm Output",
   "drivebysable.cable_actions.choose_output_channel": "%s to choose Output Channel",
@@ -136,6 +155,12 @@
   "drivebysable.controller.key.jump": "keyJump",
   "drivebysable.controller.key.shift": "keyShift",
 
-  "drivebysable.configuration.shouldConsumeCables": "Consumable Wires",
-  "drivebysable.configuration.shouldConsumeCables.tooltip": "Whether or not wires should be consumed upon use when in survival mode."
+  "drivebysable.config.shouldConsumeCables": "Should Consume Cables",
+  "drivebysable.config.allowCableDisconnect": "Allow Cable Disconnect",
+  "drivebysable.config.enforceRangeLimit": "Enforce Range Limit",
+  "drivebysable.config.rangeLimit": "Maximum Connection Range",
+  "drivebysable.config.maxOutputsPerChannel": "Maximum Outputs per Channel",
+  "drivebysable.config.maxSourcesPerSubLevel": "Maximum Sources per Sub-Level",
+  "drivebysable.config.maxSourcesInWorld": "Maximum Sources in World",
+  "key.drivebysable.hide_inactive_channels": "Hide Inactive Channel Connections"
 }

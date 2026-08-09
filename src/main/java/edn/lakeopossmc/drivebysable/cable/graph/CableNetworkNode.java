@@ -7,8 +7,8 @@ import java.util.Comparator;
 import java.util.HashMap;
 import java.util.Map;
 
-// --- ONE SINK POSITION IN THE NETWORK --- //
-// * Tracks each source input feeding this sink face
+// --- ONE SINK ENDPOINT IN THE NETWORK --- //
+// * Tracks each source input feeding this sink face or module channel
 public class CableNetworkNode {
     private final Map<InputKey, Integer> inputs = new HashMap<>();
     private final long position;
@@ -53,9 +53,63 @@ public class CableNetworkNode {
     public record InputKey(long sourcePos, String channel) {
     }
 
-    public record CableNetworkSink(long position, int direction) {
+    // --- SINK ADDRESS --- //
+    // * A sink is either a block face (sinkChannel empty) or a named module channel
+    public record CableNetworkSink(long position, int direction, String sinkChannel) {
+        public static final String BLOCK_FACE = "";
+        private static final int CANONICAL_MODULE_DIRECTION = Direction.UP.get3DDataValue();
+
+        public CableNetworkSink {
+            sinkChannel = sinkChannel == null ? BLOCK_FACE : sinkChannel;
+        }
+
+        // * Legacy constructor, block face sinks only
+        public CableNetworkSink(final long position, final int direction) {
+            this(position, direction, BLOCK_FACE);
+        }
+
         public static CableNetworkSink of(final BlockPos pos, final Direction direction) {
-            return new CableNetworkSink(pos.asLong(), direction.get3DDataValue());
+            return new CableNetworkSink(pos.asLong(), direction.get3DDataValue(), BLOCK_FACE);
+        }
+
+        // * Sub target sink, direction is ignored for these
+        public static CableNetworkSink ofModule(final BlockPos pos, final String sinkChannel) {
+            return new CableNetworkSink(pos.asLong(), CANONICAL_MODULE_DIRECTION, sinkChannel);
+        }
+
+        public static CableNetworkSink of(final BlockPos pos, final Direction direction, final String sinkChannel) {
+            return sinkChannel == null || sinkChannel.isEmpty()
+                    ? of(pos, direction)
+                    : ofModule(pos, sinkChannel);
+        }
+
+        public boolean isModule() {
+            return !sinkChannel.isEmpty();
+        }
+
+        public BlockPos blockPos() {
+            return BlockPos.of(position);
+        }
+
+        public Direction facing() {
+            return Direction.from3DDataValue(direction);
+        }
+
+        // * Key used for the module node map, direction dropped
+        public ModuleSinkKey moduleKey() {
+            return new ModuleSinkKey(position, sinkChannel);
+        }
+    }
+
+    // --- MODULE NODE KEY --- //
+    // * Module sinks are addressed by position plus channel
+    public record ModuleSinkKey(long position, String channel) {
+        public static ModuleSinkKey of(final BlockPos pos, final String channel) {
+            return new ModuleSinkKey(pos.asLong(), channel);
+        }
+
+        public BlockPos blockPos() {
+            return BlockPos.of(position);
         }
     }
 }

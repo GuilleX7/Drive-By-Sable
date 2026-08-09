@@ -8,9 +8,11 @@ import dev.ryanhcode.sable.sublevel.SubLevel;
 import edn.lakeopossmc.drivebysable.CableConfig;
 import edn.lakeopossmc.drivebysable.CableItems;
 import edn.lakeopossmc.drivebysable.DriveBySableMod;
+import edn.lakeopossmc.drivebysable.cable.SubTargetCableEndpoint;
 import edn.lakeopossmc.drivebysable.cable.graph.CableNetworkNode;
 import edn.lakeopossmc.drivebysable.cable.graph.CableNetworkNode.CableNetworkSink;
 import edn.lakeopossmc.drivebysable.cable.graph.CableNetworkNode.InputKey;
+import edn.lakeopossmc.drivebysable.cable.graph.CableNetworkNode.ModuleSinkKey;
 import edn.lakeopossmc.drivebysable.util.BlockFace;
 import net.createmod.catnip.data.WorldAttached;
 import net.minecraft.core.BlockPos;
@@ -41,6 +43,7 @@ public final class CableNetworkManager {
     private static final String SINK_OWNER_KEY = "SinkOwnerSubLevel";
     private static final String DIRECTION_KEY = "Direction";
     private static final String CHANNEL_KEY = "Channel";
+    private static final String SINK_CHANNEL_KEY = "SinkChannel";
     private static final String FACING_KEY = "Facing";
     private static final String UNSUPPORTED_CONNECTIONS_KEY = "UnsupportedConnections";
     private static final String SNAPSHOT_VERSION_KEY = "SnapshotVersion";
@@ -48,14 +51,14 @@ public final class CableNetworkManager {
     private static final String PLACEMENT_RESOLVED_KEY = "PlacementResolved";
     private static final int RELATIVE_SNAPSHOT_VERSION = 2;
     private static final int OWNER_AWARE_SNAPSHOT_VERSION = 3;
-    private static final int MAX_SOURCES = 64;
-    private static final int MAX_SINKS_PER_SOURCE = 64;
     private static final WorldAttached<CableNetworkManager> CLIENT_MANAGERS = new WorldAttached<>(level -> new CableNetworkManager(() -> {}));
 
     private final Map<Long, Map<String, Set<CableNetworkSink>>> sinks = new HashMap<>();
     private final Map<Long, Set<SinkReference>> sinkReferences = new HashMap<>();
     private final Map<Long, Map<String, Integer>> sourceValues = new HashMap<>();
     private final Map<BlockFace, CableNetworkNode> nodes = new HashMap<>();
+    // * Module sinks are addressed by name rather than by face
+    private final Map<ModuleSinkKey, CableNetworkNode> moduleNodes = new HashMap<>();
     private final Set<BlockFace> staleFaces = new HashSet<>();
     private final Set<Long> pendingAssemblyPositions = new HashSet<>();
     private final Runnable dirtyMarker;
@@ -84,7 +87,18 @@ public final class CableNetworkManager {
             final Direction sinkDirection,
             final String channel
     ) {
-        return get(level).addConnection(level, source, sinkPos, sinkDirection, channel);
+        return createConnection(level, source, sinkPos, sinkDirection, channel, CableNetworkSink.BLOCK_FACE);
+    }
+
+    public static ConnectionResult createConnection(
+            final Level level,
+            final BlockPos source,
+            final BlockPos sinkPos,
+            final Direction sinkDirection,
+            final String channel,
+            final String sinkChannel
+    ) {
+        return get(level).addConnection(level, source, sinkPos, sinkDirection, channel, sinkChannel);
     }
 
     public static boolean hasConnection(
@@ -97,6 +111,17 @@ public final class CableNetworkManager {
         return get(level).containsConnection(source, sinkPos, sinkDirection, channel);
     }
 
+    public static boolean hasConnection(
+            final Level level,
+            final BlockPos source,
+            final BlockPos sinkPos,
+            final Direction sinkDirection,
+            final String channel,
+            final String sinkChannel
+    ) {
+        return get(level).containsConnection(source, sinkPos, sinkDirection, channel, sinkChannel);
+    }
+
     public static boolean removeConnection(
             final Level level,
             final BlockPos source,
@@ -104,11 +129,52 @@ public final class CableNetworkManager {
             final Direction sinkDirection,
             final String channel
     ) {
-        return get(level).removeConnectionInternal(level, source, sinkPos, sinkDirection, channel);
+        return removeConnection(level, source, sinkPos, sinkDirection, channel, CableNetworkSink.BLOCK_FACE);
+    }
+
+    public static boolean removeConnection(
+            final Level level,
+            final BlockPos source,
+            final BlockPos sinkPos,
+            final Direction sinkDirection,
+            final String channel,
+            final String sinkChannel
+    ) {
+        return get(level).removeConnectionInternal(level, source, sinkPos, sinkDirection, channel, sinkChannel);
+    }
+
+    // * Drop every connection feeding one module channel, used when a module is deleted
+    public static boolean removeAllToModuleSink(final Level level, final BlockPos sinkPos, final String sinkChannel) {
+        return get(level).removeAllToModuleSinkInternal(level, sinkPos, sinkChannel);
+    }
+
+    // * Follow a module through a rename without dropping its wiring
+    public static boolean remapModuleSink(
+            final Level level,
+            final BlockPos sinkPos,
+            final String oldSinkChannel,
+            final String newSinkChannel
+    ) {
+        return get(level).remapModuleSinkInternal(level, sinkPos, oldSinkChannel, newSinkChannel);
     }
 
     public static boolean removeAllFromSource(final ServerPlayer serverPlayer, final Level level, final BlockPos source) {
         return get(level).removeAllFromSourceInternal(serverPlayer, level, source);
+    }
+
+    // * Everything wired to one sub target of a block
+    public static boolean removeAllForSubTarget(
+            final ServerPlayer serverPlayer,
+            final Level level,
+            final BlockPos pos,
+            final String subTarget
+    ) {
+        return get(level).removeAllForSubTargetInternal(serverPlayer, level, pos, subTarget);
+    }
+
+    // * Does this sub target have anything wired to it, either end?
+    public static boolean hasConnectionsForSubTarget(final Level level, final BlockPos pos, final String subTarget) {
+        return get(level).hasConnectionsForSubTargetInternal(level, pos, subTarget);
     }
 
     public static boolean removeAllFromSourceChannel(final Level level, final BlockPos source, final String channel) {
@@ -164,7 +230,21 @@ public final class CableNetworkManager {
             final Direction sinkDirection,
             final String channel
     ) {
-        if (source.equals(sinkPos)) {
+        return addConnection(level, source, sinkPos, sinkDirection, channel, CableNetworkSink.BLOCK_FACE);
+    }
+
+    public ConnectionResult addConnection(
+            final Level level,
+            final BlockPos source,
+            final BlockPos sinkPos,
+            final Direction sinkDirection,
+            final String channel,
+            final String sinkChannel
+    ) {
+        final CableNetworkSink sink = CableNetworkSink.of(sinkPos, sinkDirection, sinkChannel);
+
+        // * A panel can legitimately feed one of its own modules from another
+        if (source.equals(sinkPos) && (!sink.isModule() || channel.equals(sink.sinkChannel()))) {
             return ConnectionResult.FAIL_SAME_BLOCK;
         }
 
@@ -172,17 +252,29 @@ public final class CableNetworkManager {
             return ConnectionResult.FAIL_INVALID_CHANNEL;
         }
 
+        if (!isValidSinkChannel(level, sinkPos, sink.sinkChannel())) {
+            return ConnectionResult.FAIL_INVALID_SINK_CHANNEL;
+        }
+
+        final RangeResult range = checkRange(level, source, sinkPos);
+        if (range == RangeResult.CROSS_LEVEL) {
+            return ConnectionResult.FAIL_CROSS_LEVEL;
+        }
+        if (range == RangeResult.OUT_OF_RANGE) {
+            return ConnectionResult.FAIL_OUT_OF_RANGE;
+        }
+
         final long sourceKey = source.asLong();
-        if (!sinks.containsKey(sourceKey) && countSourcesInSameDomain(level, source) >= MAX_SOURCES) {
+        if (exceedsSourceLimit(level, source)) {
             return ConnectionResult.FAIL_TOO_MANY_SOURCES;
         }
 
-        final Set<CableNetworkSink> sinksOnChannel = getOrCreateSinksOnChannel(source, channel);
-        if (sinksOnChannel.size() >= MAX_SINKS_PER_SOURCE) {
+        if (exceedsSinkLimit(source, channel)) {
             return ConnectionResult.FAIL_TOO_MANY_SINKS;
         }
 
-        final CableNetworkSink sink = CableNetworkSink.of(sinkPos, sinkDirection);
+        final Set<CableNetworkSink> sinksOnChannel = getOrCreateSinksOnChannel(source, channel);
+
         if (!sinksOnChannel.add(sink)) {
             return ConnectionResult.FAIL_EXISTS;
         }
@@ -202,15 +294,117 @@ public final class CableNetworkManager {
         return WORLD_CHANNEL.equals(channel);
     }
 
+    // * The source cap is counted per domain
+    public static String sourceLimitLangKey(final Level level, final BlockPos source) {
+        return isLooseInWorld(level, source)
+                ? "drivebysable.invalid_op.too_many_sources_world"
+                : "drivebysable.invalid_op.too_many_sources_sublevel";
+    }
+
+    // * The world and each sublevel carry separate source budgets
+    private static boolean isLooseInWorld(final Level level, final BlockPos pos) {
+        return Sable.HELPER.getContaining(level, pos) == null;
+    }
+
+    private static int sourceLimitFor(final Level level, final BlockPos source) {
+        return isLooseInWorld(level, source)
+                ? CableConfig.CONFIG.maxSourcesInWorld.get()
+                : CableConfig.CONFIG.maxSourcesPerSubLevel.get();
+    }
+
+    // * Would adding a brand new source here push this domain over the limit?
+    public static boolean wouldExceedSourceLimit(final Level level, final BlockPos source) {
+        final CableNetworkManager manager = get(level);
+        return manager != null && manager.exceedsSourceLimit(level, source);
+    }
+
+    // * Instance form so addConnection does not bounce back through get(level)
+    private boolean exceedsSourceLimit(final Level level, final BlockPos source) {
+        if (sinks.containsKey(source.asLong())) {
+            return false;
+        }
+        return countSourcesInSameDomain(level, source) >= sourceLimitFor(level, source);
+    }
+
+    // * The cap is per source AND channel
+    public static boolean wouldExceedSinkLimit(final Level level, final BlockPos source, final String channel) {
+        final CableNetworkManager manager = get(level);
+        return manager != null && manager.exceedsSinkLimit(source, channel);
+    }
+
+    private boolean exceedsSinkLimit(final BlockPos source, final String channel) {
+        final Set<CableNetworkSink> sinksOnChannel = sinks
+                .getOrDefault(source.asLong(), Map.of())
+                .get(channel);
+        return sinksOnChannel != null && sinksOnChannel.size() >= CableConfig.CONFIG.maxOutputsPerChannel.get();
+    }
+
+    // * Outcome of the configured range limit for one connection
+    public enum RangeResult {
+        OK,
+        OUT_OF_RANGE,
+        CROSS_LEVEL;
+
+        public boolean blocked() {
+            return this != OK;
+        }
+    }
+
+    // * Straight line distance between the two block positions
+    // * A sublevel stores its positions differently, so those connections are refused
+    public static RangeResult checkRange(final Level level, final BlockPos source, final BlockPos sinkPos) {
+        if (!CableConfig.CONFIG.enforceRangeLimit.get()) {
+            return RangeResult.OK;
+        }
+
+        if (!isSameSubLevelContext(level, source, sinkPos)) {
+            return RangeResult.CROSS_LEVEL;
+        }
+
+        final long limit = CableConfig.CONFIG.rangeLimit.get();
+        return source.distSqr(sinkPos) > (double) limit * limit ? RangeResult.OUT_OF_RANGE : RangeResult.OK;
+    }
+
+    // * Both in the world, or both in the same sublevel
+    private static boolean isSameSubLevelContext(final Level level, final BlockPos first, final BlockPos second) {
+        final SubLevel firstSubLevel = Sable.HELPER.getContaining(level, first);
+        final SubLevel secondSubLevel = Sable.HELPER.getContaining(level, second);
+
+        if (firstSubLevel == null || secondSubLevel == null) {
+            return firstSubLevel == null && secondSubLevel == null;
+        }
+        return Objects.equals(firstSubLevel.getUniqueId(), secondSubLevel.getUniqueId());
+    }
+
+    // * Empty means a plain block face, which any block can be
+    private boolean isValidSinkChannel(final Level level, final BlockPos sinkPos, final String sinkChannel) {
+        if (sinkChannel.isEmpty()) {
+            return true;
+        }
+
+        return level.getBlockState(sinkPos).getBlock() instanceof final ModuleSinkTarget target
+                && target.cable$getSinkChannels(level, sinkPos).contains(sinkChannel);
+    }
+
     public boolean containsConnection(
             final BlockPos source,
             final BlockPos sinkPos,
             final Direction sinkDirection,
             final String channel
     ) {
+        return containsConnection(source, sinkPos, sinkDirection, channel, CableNetworkSink.BLOCK_FACE);
+    }
+
+    public boolean containsConnection(
+            final BlockPos source,
+            final BlockPos sinkPos,
+            final Direction sinkDirection,
+            final String channel,
+            final String sinkChannel
+    ) {
         return sinks.getOrDefault(source.asLong(), Map.of())
                 .getOrDefault(channel, Set.of())
-                .contains(CableNetworkSink.of(sinkPos, sinkDirection));
+                .contains(CableNetworkSink.of(sinkPos, sinkDirection, sinkChannel));
     }
 
     public boolean removeConnectionInternal(
@@ -219,6 +413,17 @@ public final class CableNetworkManager {
             final BlockPos sinkPos,
             final Direction sinkDirection,
             final String channel
+    ) {
+        return removeConnectionInternal(level, source, sinkPos, sinkDirection, channel, CableNetworkSink.BLOCK_FACE);
+    }
+
+    public boolean removeConnectionInternal(
+            final Level level,
+            final BlockPos source,
+            final BlockPos sinkPos,
+            final Direction sinkDirection,
+            final String channel,
+            final String sinkChannel
     ) {
         final long sourceKey = source.asLong();
         final Map<String, Set<CableNetworkSink>> perChannel = sinks.get(sourceKey);
@@ -231,7 +436,7 @@ public final class CableNetworkManager {
             return false;
         }
 
-        final CableNetworkSink sink = CableNetworkSink.of(sinkPos, sinkDirection);
+        final CableNetworkSink sink = CableNetworkSink.of(sinkPos, sinkDirection, sinkChannel);
         if (!sinksOnChannel.remove(sink)) {
             return false;
         }
@@ -253,6 +458,144 @@ public final class CableNetworkManager {
 
     //#region // --- BULK REMOVE AND REMAP --- //
     // * Refunds cables to player if given, used by block break and cutter
+    public boolean removeAllForSubTargetInternal(
+            final ServerPlayer serverPlayer,
+            final Level level,
+            final BlockPos pos,
+            final String subTarget
+    ) {
+        if (subTarget == null || subTarget.isEmpty()) {
+            return removeAllFromSourceInternal(serverPlayer, level, pos);
+        }
+
+        if (!(level.getBlockState(pos).getBlock() instanceof final SubTargetCableEndpoint endpoint)) {
+            return removeAllFromSourceInternal(serverPlayer, level, pos);
+        }
+
+        final long sourceKey = pos.asLong();
+        boolean changed = false;
+
+        // * Source side
+        final Map<String, Set<CableNetworkSink>> perChannel = sinks.get(sourceKey);
+        if (perChannel != null) {
+            for (final String channel : Set.copyOf(perChannel.keySet())) {
+                if (!subTarget.equals(endpoint.cable$subTargetForChannel(level, pos, channel))) {
+                    continue;
+                }
+
+                final Set<CableNetworkSink> sinksOnChannel = perChannel.remove(channel);
+                if (sinksOnChannel == null) {
+                    continue;
+                }
+
+                for (final CableNetworkSink sink : sinksOnChannel) {
+                    refundCable(serverPlayer);
+                    removeSinkReference(sourceKey, channel, sink);
+                    applySignalToSink(level, sourceKey, channel, sink, 0);
+                    changed = true;
+                }
+
+                final Map<String, Integer> values = sourceValues.get(sourceKey);
+                if (values != null) {
+                    values.remove(channel);
+                    if (values.isEmpty()) {
+                        sourceValues.remove(sourceKey);
+                    }
+                }
+            }
+
+            if (perChannel.isEmpty()) {
+                sinks.remove(sourceKey);
+            }
+        }
+
+        // * Sink side, anything feeding a module channel on this sub target
+        final Set<SinkReference> references = sinkReferences.get(sourceKey);
+        if (references != null) {
+            for (final SinkReference reference : Set.copyOf(references)) {
+                final String sinkChannel = reference.sinkChannel();
+                if (sinkChannel.isEmpty()
+                        || !subTarget.equals(endpoint.cable$subTargetForChannel(level, pos, sinkChannel))) {
+                    continue;
+                }
+
+                final Map<String, Set<CableNetworkSink>> feederChannels = sinks.get(reference.sourcePos());
+                if (feederChannels == null) {
+                    continue;
+                }
+
+                final Set<CableNetworkSink> feederSinks = feederChannels.get(reference.channel());
+                if (feederSinks == null) {
+                    continue;
+                }
+
+                final CableNetworkSink sink = new CableNetworkSink(sourceKey, reference.direction(), sinkChannel);
+                if (!feederSinks.remove(sink)) {
+                    continue;
+                }
+
+                refundCable(serverPlayer);
+                removeSinkReference(reference.sourcePos(), reference.channel(), sink);
+                applySignalToSink(level, reference.sourcePos(), reference.channel(), sink, 0);
+                changed = true;
+
+                if (feederSinks.isEmpty()) {
+                    feederChannels.remove(reference.channel());
+                }
+                if (feederChannels.isEmpty()) {
+                    sinks.remove(reference.sourcePos());
+                }
+            }
+        }
+
+        if (changed) {
+            dirtyMarker.run();
+        }
+        return changed;
+    }
+
+    public boolean hasConnectionsForSubTargetInternal(final Level level, final BlockPos pos, final String subTarget) {
+        if (subTarget == null || subTarget.isEmpty()
+                || !(level.getBlockState(pos).getBlock() instanceof final SubTargetCableEndpoint endpoint)) {
+            final Map<String, Set<CableNetworkSink>> all = sinks.get(pos.asLong());
+            return all != null && all.values().stream().anyMatch(set -> !set.isEmpty());
+        }
+
+        final long key = pos.asLong();
+        final Map<String, Set<CableNetworkSink>> perChannel = sinks.get(key);
+        if (perChannel != null) {
+            for (final Map.Entry<String, Set<CableNetworkSink>> entry : perChannel.entrySet()) {
+                if (!entry.getValue().isEmpty()
+                        && subTarget.equals(endpoint.cable$subTargetForChannel(level, pos, entry.getKey()))) {
+                    return true;
+                }
+            }
+        }
+
+        final Set<SinkReference> references = sinkReferences.get(key);
+        if (references != null) {
+            for (final SinkReference reference : references) {
+                if (!reference.sinkChannel().isEmpty()
+                        && subTarget.equals(endpoint.cable$subTargetForChannel(level, pos, reference.sinkChannel()))) {
+                    return true;
+                }
+            }
+        }
+        return false;
+    }
+
+    // * Hand a cable back for a removed connection
+    private void refundCable(final ServerPlayer serverPlayer) {
+        if (serverPlayer == null || !CableConfig.CONFIG.shouldConsumeCables.get() || serverPlayer.hasInfiniteMaterials()) {
+            return;
+        }
+
+        final ItemStack cable = new ItemStack(CableItems.CABLE.get());
+        if (!serverPlayer.addItem(cable)) {
+            serverPlayer.drop(cable, false);
+        }
+    }
+
     public boolean removeAllFromSourceInternal(final ServerPlayer serverPlayer, final Level level, final BlockPos source) {
         final long sourceKey = source.asLong();
         final Map<String, Set<CableNetworkSink>> perChannel = sinks.remove(sourceKey);
@@ -306,6 +649,120 @@ public final class CableNetworkManager {
 
         dirtyMarker.run();
         return true;
+    }
+
+    // * Drops every connection pointing at one module channel
+    public boolean removeAllToModuleSinkInternal(final Level level, final BlockPos sinkPos, final String sinkChannel) {
+        if (sinkChannel == null || sinkChannel.isEmpty()) {
+            return false;
+        }
+
+        final long sinkKey = sinkPos.asLong();
+        final Set<SinkReference> references = sinkReferences.get(sinkKey);
+        if (references == null || references.isEmpty()) {
+            return false;
+        }
+
+        boolean changed = false;
+        for (final SinkReference reference : Set.copyOf(references)) {
+            if (!sinkChannel.equals(reference.sinkChannel())) {
+                continue;
+            }
+
+            final Map<String, Set<CableNetworkSink>> perChannel = sinks.get(reference.sourcePos());
+            if (perChannel == null) {
+                continue;
+            }
+
+            final Set<CableNetworkSink> sinksOnChannel = perChannel.get(reference.channel());
+            if (sinksOnChannel == null) {
+                continue;
+            }
+
+            final CableNetworkSink sink = new CableNetworkSink(sinkKey, reference.direction(), sinkChannel);
+            if (!sinksOnChannel.remove(sink)) {
+                continue;
+            }
+
+            removeSinkReference(reference.sourcePos(), reference.channel(), sink);
+            applySignalToSink(level, reference.sourcePos(), reference.channel(), sink, 0);
+
+            if (sinksOnChannel.isEmpty()) {
+                perChannel.remove(reference.channel());
+            }
+            if (perChannel.isEmpty()) {
+                sinks.remove(reference.sourcePos());
+            }
+            changed = true;
+        }
+
+        if (changed) {
+            dirtyMarker.run();
+        }
+        return changed;
+    }
+
+    // * Retarget every connection from one module channel to another
+    public boolean remapModuleSinkInternal(
+            final Level level,
+            final BlockPos sinkPos,
+            final String oldSinkChannel,
+            final String newSinkChannel
+    ) {
+        if (oldSinkChannel == null || oldSinkChannel.isEmpty() || newSinkChannel == null || newSinkChannel.isEmpty()) {
+            return false;
+        }
+        if (oldSinkChannel.equals(newSinkChannel)) {
+            return false;
+        }
+
+        final long sinkKey = sinkPos.asLong();
+        final Set<SinkReference> references = sinkReferences.get(sinkKey);
+        if (references == null || references.isEmpty()) {
+            return false;
+        }
+
+        boolean changed = false;
+        for (final SinkReference reference : Set.copyOf(references)) {
+            if (!oldSinkChannel.equals(reference.sinkChannel())) {
+                continue;
+            }
+
+            final Map<String, Set<CableNetworkSink>> perChannel = sinks.get(reference.sourcePos());
+            if (perChannel == null) {
+                continue;
+            }
+
+            final Set<CableNetworkSink> sinksOnChannel = perChannel.get(reference.channel());
+            if (sinksOnChannel == null) {
+                continue;
+            }
+
+            final CableNetworkSink oldSink = new CableNetworkSink(sinkKey, reference.direction(), oldSinkChannel);
+            if (!sinksOnChannel.remove(oldSink)) {
+                continue;
+            }
+
+            removeSinkReference(reference.sourcePos(), reference.channel(), oldSink);
+            applySignalToSink(level, reference.sourcePos(), reference.channel(), oldSink, 0);
+
+            final CableNetworkSink newSink = new CableNetworkSink(sinkKey, reference.direction(), newSinkChannel);
+            sinksOnChannel.add(newSink);
+            addSinkReference(reference.sourcePos(), reference.channel(), newSink);
+            applySignalToSink(
+                    level,
+                    reference.sourcePos(),
+                    reference.channel(),
+                    newSink,
+                    getCurrentSignal(level, BlockPos.of(reference.sourcePos()), reference.channel())
+            );
+            changed = true;
+        }
+
+        if (changed) {
+            dirtyMarker.run();
+        }
+        return changed;
     }
 
     // * Moves connections to a new channel name without touching endpoints
@@ -404,6 +861,23 @@ public final class CableNetworkManager {
         return node == null ? 0 : node.getSignal();
     }
 
+    public int getModuleSinkSignal(final BlockPos sinkPos, final String sinkChannel) {
+        final CableNetworkNode node = moduleNodes.get(ModuleSinkKey.of(sinkPos, sinkChannel));
+        return node == null ? 0 : node.getSignal();
+    }
+
+    // * Every module channel on this block that the network is currently driving
+    public Map<String, Integer> getModuleSinkSignals(final BlockPos sinkPos) {
+        final long key = sinkPos.asLong();
+        final Map<String, Integer> values = new HashMap<>();
+        moduleNodes.forEach((moduleKey, node) -> {
+            if (moduleKey.position() == key) {
+                values.put(moduleKey.channel(), node.getSignal());
+            }
+        });
+        return values;
+    }
+
     // * Strongest signal out of a vanilla signal source, else best neighbor
     public static int computeWorldSignal(final Level level, final BlockPos pos) {
         final BlockState state = level.getBlockState(pos);
@@ -477,6 +951,9 @@ public final class CableNetworkManager {
                         connection.putLong(SINK_KEY, sinkPos.subtract(backupPos).asLong());
                         connection.putByte(DIRECTION_KEY, (byte) sink.direction());
                         connection.putString(CHANNEL_KEY, channelEntry.getKey());
+                        if (sink.isModule()) {
+                            connection.putString(SINK_CHANNEL_KEY, sink.sinkChannel());
+                        }
                         connections.add(connection);
                         internalConnections++;
                     } else if (sourceInside || sinkInside) {
@@ -537,6 +1014,9 @@ public final class CableNetworkManager {
 
                     connection.putByte(DIRECTION_KEY, (byte) sink.direction());
                     connection.putString(CHANNEL_KEY, channelEntry.getKey());
+                    if (sink.isModule()) {
+                        connection.putString(SINK_CHANNEL_KEY, sink.sinkChannel());
+                    }
                     connections.add(connection);
                     preservedConnections++;
                 }
@@ -631,8 +1111,12 @@ public final class CableNetworkManager {
                 expectedConnections++;
                 final BlockPos sourcePos = backupPos.offset(rotateRelative(BlockPos.of(connection.getLong(SOURCE_KEY)), rotation));
                 final BlockPos sinkPos = backupPos.offset(rotateRelative(BlockPos.of(connection.getLong(SINK_KEY)), rotation));
-                final Direction sinkDirection = rotateDirection(Direction.from3DDataValue(connection.getByte(DIRECTION_KEY)), rotation);
                 final String channel = connection.getString(CHANNEL_KEY);
+                final String sinkChannel = connection.getString(SINK_CHANNEL_KEY);
+                // * Module sinks carry no facing
+                final Direction sinkDirection = sinkChannel.isEmpty()
+                        ? rotateDirection(Direction.from3DDataValue(connection.getByte(DIRECTION_KEY)), rotation)
+                        : Direction.from3DDataValue(connection.getByte(DIRECTION_KEY));
 
                 if (!isSameSubLevel(backupSubLevel, Sable.HELPER.getContaining(level, sourcePos))
                         || !isSameSubLevel(backupSubLevel, Sable.HELPER.getContaining(level, sinkPos))) {
@@ -640,12 +1124,12 @@ public final class CableNetworkManager {
                     continue;
                 }
 
-                if (containsConnection(sourcePos, sinkPos, sinkDirection, channel)) {
+                if (containsConnection(sourcePos, sinkPos, sinkDirection, channel, sinkChannel)) {
                     existingConnections++;
                     continue;
                 }
 
-                if (addConnection(level, sourcePos, sinkPos, sinkDirection, channel).isSuccess()) {
+                if (addConnection(level, sourcePos, sinkPos, sinkDirection, channel, sinkChannel).isSuccess()) {
                     restoredConnections++;
                 }
             }
@@ -694,13 +1178,14 @@ public final class CableNetworkManager {
                 final BlockPos sinkPos = sink.position();
                 final Direction sinkDirection = Direction.from3DDataValue(connection.getByte(DIRECTION_KEY));
                 final String channel = connection.getString(CHANNEL_KEY);
+                final String sinkChannel = connection.getString(SINK_CHANNEL_KEY);
 
-                if (containsConnection(sourcePos, sinkPos, sinkDirection, channel)) {
+                if (containsConnection(sourcePos, sinkPos, sinkDirection, channel, sinkChannel)) {
                     existingConnections++;
                     continue;
                 }
 
-                if (addConnection(level, sourcePos, sinkPos, sinkDirection, channel).isSuccess()) {
+                if (addConnection(level, sourcePos, sinkPos, sinkDirection, channel, sinkChannel).isSuccess()) {
                     restoredConnections++;
                 }
             }
@@ -768,8 +1253,10 @@ public final class CableNetworkManager {
         }
 
         final Set<BlockFace> previousFaces = new HashSet<>(staleFaces);
+        final Set<ModuleSinkKey> previousModuleKeys = new HashSet<>(moduleNodes.keySet());
         staleFaces.clear();
         nodes.clear();
+        moduleNodes.clear();
 
         sinks.forEach((sourceKey, perChannel) -> perChannel.forEach((channel, sinksOnChannel) -> {
             final int signal = getCurrentSignal(level, BlockPos.of(sourceKey), channel);
@@ -778,6 +1265,11 @@ public final class CableNetworkManager {
 
         previousFaces.removeAll(nodes.keySet());
         previousFaces.forEach(face -> notifySink(level, face));
+
+        // * A module that lost all of its feeds has to be told to go dark
+        previousModuleKeys.removeAll(moduleNodes.keySet());
+        previousModuleKeys.forEach(key -> pushModuleSignal(level, key, 0));
+
         graphDirty = false;
     }
 
@@ -789,6 +1281,9 @@ public final class CableNetworkManager {
             connection.putLong(SINK_KEY, sink.position());
             connection.putByte(DIRECTION_KEY, (byte) sink.direction());
             connection.putString(CHANNEL_KEY, channel);
+            if (sink.isModule()) {
+                connection.putString(SINK_CHANNEL_KEY, sink.sinkChannel());
+            }
             connections.add(connection);
         })));
         tag.put(CONNECTIONS_KEY, connections);
@@ -801,6 +1296,7 @@ public final class CableNetworkManager {
         sinkReferences.clear();
         sourceValues.clear();
         nodes.clear();
+        moduleNodes.clear();
         staleFaces.clear();
         attachedToLevel = false;
         graphDirty = false;
@@ -826,7 +1322,9 @@ public final class CableNetworkManager {
             final long sinkKey = connection.getLong(SINK_KEY);
             final int direction = connection.getByte(DIRECTION_KEY);
             final String channel = connection.getString(CHANNEL_KEY);
-            final CableNetworkSink sink = new CableNetworkSink(sinkKey, direction);
+            // * Missing on anything saved before module sinks existed
+            final String sinkChannel = connection.getString(SINK_CHANNEL_KEY);
+            final CableNetworkSink sink = new CableNetworkSink(sinkKey, direction, sinkChannel);
             getOrCreateSinksOnChannel(BlockPos.of(sourceKey), channel).add(sink);
             addSinkReference(sourceKey, channel, sink);
         }
@@ -886,10 +1384,14 @@ public final class CableNetworkManager {
                     continue;
                 }
 
-                if (sinksOnChannel.remove(new CableNetworkSink(oldKey, reference.direction()))) {
-                    final Direction transformedDirection = transform.getRotation().rotate(Direction.from3DDataValue(reference.direction()));
-                    sinksOnChannel.add(new CableNetworkSink(newKey, transformedDirection.get3DDataValue()));
-                    addSinkReference(newKey, reference.sourcePos(), reference.channel(), transformedDirection.get3DDataValue());
+                final String sinkChannel = reference.sinkChannel();
+                if (sinksOnChannel.remove(new CableNetworkSink(oldKey, reference.direction(), sinkChannel))) {
+                    // * A module sink has no meaningful facing
+                    final int newDirection = sinkChannel.isEmpty()
+                            ? transform.getRotation().rotate(Direction.from3DDataValue(reference.direction())).get3DDataValue()
+                            : reference.direction();
+                    sinksOnChannel.add(new CableNetworkSink(newKey, newDirection, sinkChannel));
+                    addSinkReference(newKey, reference.sourcePos(), reference.channel(), newDirection, sinkChannel);
                     changed = true;
                 }
             }
@@ -910,12 +1412,18 @@ public final class CableNetworkManager {
     }
 
     private void addSinkReference(final long sourcePos, final String channel, final CableNetworkSink sink) {
-        addSinkReference(sink.position(), sourcePos, channel, sink.direction());
+        addSinkReference(sink.position(), sourcePos, channel, sink.direction(), sink.sinkChannel());
     }
 
-    private void addSinkReference(final long sinkPos, final long sourcePos, final String channel, final int direction) {
+    private void addSinkReference(
+            final long sinkPos,
+            final long sourcePos,
+            final String channel,
+            final int direction,
+            final String sinkChannel
+    ) {
         sinkReferences.computeIfAbsent(sinkPos, ignored -> new HashSet<>())
-                .add(new SinkReference(sourcePos, channel, direction));
+                .add(new SinkReference(sourcePos, channel, direction, sinkChannel));
     }
 
     private void removeSinkReference(final long sourcePos, final String channel, final CableNetworkSink sink) {
@@ -924,7 +1432,7 @@ public final class CableNetworkManager {
             return;
         }
 
-        references.remove(new SinkReference(sourcePos, channel, sink.direction()));
+        references.remove(new SinkReference(sourcePos, channel, sink.direction(), sink.sinkChannel()));
         if (references.isEmpty()) {
             sinkReferences.remove(sink.position());
         }
@@ -974,6 +1482,28 @@ public final class CableNetworkManager {
             final int signal
     ) {
         final BlockPos sinkPos = BlockPos.of(sink.position());
+
+        // * Module sinks have nothing to query them back
+        if (sink.isModule()) {
+            final ModuleSinkKey key = sink.moduleKey();
+            final CableNetworkNode moduleNode = moduleNodes.computeIfAbsent(
+                    key,
+                    ignored -> new CableNetworkNode(sink.position(), sink.direction())
+            );
+
+            if (!moduleNode.setInput(new InputKey(sourcePos, channel), signal)) {
+                return;
+            }
+
+            final int aggregated = moduleNode.getSignal();
+            if (moduleNode.isEmpty()) {
+                moduleNodes.remove(key);
+            }
+
+            pushModuleSignal(level, key, aggregated);
+            return;
+        }
+
         final Direction sinkDirection = Direction.from3DDataValue(sink.direction());
         final BlockFace face = BlockFace.of(sinkPos, sinkDirection);
         final CableNetworkNode node = nodes.computeIfAbsent(face, ignored -> new CableNetworkNode(sink.position(), sink.direction()));
@@ -990,6 +1520,14 @@ public final class CableNetworkManager {
         level.updateNeighborsAt(updatedPos, level.getBlockState(updatedPos).getBlock());
     }
 
+    // * Hand the value to the block
+    private void pushModuleSignal(final Level level, final ModuleSinkKey key, final int signal) {
+        final BlockPos pos = key.blockPos();
+        if (level.getBlockState(pos).getBlock() instanceof final ModuleSinkTarget target) {
+            target.cable$applySinkSignal(level, pos, key.channel(), signal);
+        }
+    }
+
     private void notifySink(final Level level, final BlockFace face) {
         final BlockPos sinkPos = BlockPos.of(face.pos());
         final Direction sinkDirection = Direction.from3DDataValue(face.dir());
@@ -1000,17 +1538,35 @@ public final class CableNetworkManager {
 
     // --- NESTED TYPES --- //
     public enum ConnectionResult {
-        OK(""),
-        FAIL_EXISTS("Connection already exists!"),
-        FAIL_TOO_MANY_SOURCES("Exceeded source limit for this structure!"),
-        FAIL_TOO_MANY_SINKS("Exceeded sink limit for this source!"),
-        FAIL_SAME_BLOCK("Source and sink must be different blocks!"),
-        FAIL_INVALID_CHANNEL("This channel is not available on this source!");
+        OK("", ""),
+        FAIL_EXISTS("Connection already exists!", "drivebysable.invalid_op.connection_exists"),
+        // * Key depends on whether the source sits in a sublevel
+        FAIL_TOO_MANY_SOURCES("Exceeded source limit for this structure!", ""),
+        FAIL_TOO_MANY_SINKS("Exceeded sink limit for this source!", "drivebysable.invalid_op.too_many_sinks"),
+        FAIL_SAME_BLOCK("Source and sink must be different blocks!", "drivebysable.invalid_op.same_block"),
+        FAIL_INVALID_CHANNEL("This channel is not available on this source!", "drivebysable.invalid_op.stale_source_channel"),
+        FAIL_INVALID_SINK_CHANNEL("This channel is not available on this output!", "drivebysable.invalid_op.stale_output_channel"),
+        FAIL_OUT_OF_RANGE("That output is too far from this source!", "drivebysable.invalid_op.out_of_range"),
+        FAIL_CROSS_LEVEL("Range limit disables cross-level connections!", "drivebysable.invalid_op.cross_level");
 
         private final String description;
+        private final String langKey;
 
-        ConnectionResult(final String description) {
+        ConnectionResult(final String description, final String langKey) {
             this.description = description;
+            this.langKey = langKey;
+        }
+
+        public String getLangKey() {
+            return langKey;
+        }
+
+        // * Some failures read differently depending on where the source is
+        public String resolveLangKey(final Level level, final BlockPos source) {
+            if (this == FAIL_TOO_MANY_SOURCES) {
+                return sourceLimitLangKey(level, source);
+            }
+            return langKey;
         }
 
         public boolean isSuccess() {
@@ -1035,6 +1591,12 @@ public final class CableNetworkManager {
     ) {
     }
 
+    // * A stored connection targets a module rather than a face
+    private static boolean isModuleSinkTag(final CompoundTag connection) {
+        return connection.contains(SINK_CHANNEL_KEY, Tag.TAG_STRING)
+                && !connection.getString(SINK_CHANNEL_KEY).isEmpty();
+    }
+
     private record ResolvedEndpoint(BlockPos position, boolean isDeferred) {
         private static ResolvedEndpoint resolved(final BlockPos position) {
             return new ResolvedEndpoint(position, false);
@@ -1045,7 +1607,11 @@ public final class CableNetworkManager {
         }
     }
 
-    private record SinkReference(long sourcePos, String channel, int direction) {
+    // * sinkChannel is empty for a block face, named for a module sink
+    private record SinkReference(long sourcePos, String channel, int direction, String sinkChannel) {
+        private SinkReference {
+            sinkChannel = sinkChannel == null ? CableNetworkSink.BLOCK_FACE : sinkChannel;
+        }
     }
 
     //#region // --- SNAPSHOT QUERY HELPERS --- //
@@ -1131,7 +1697,8 @@ public final class CableNetworkManager {
             if (connection.contains(SINK_KEY, Tag.TAG_LONG) && !connection.hasUUID(SINK_OWNER_KEY)) {
                 final BlockPos sinkPos = BlockPos.of(connection.getLong(SINK_KEY));
                 connection.putLong(SINK_KEY, transformMainTemplatePosition(sinkPos, context).asLong());
-                if (connection.contains(DIRECTION_KEY, Tag.TAG_BYTE)) {
+                // * Module sinks are addressed by name
+                if (connection.contains(DIRECTION_KEY, Tag.TAG_BYTE) && !isModuleSinkTag(connection)) {
                     final Direction direction = Direction.from3DDataValue(connection.getByte(DIRECTION_KEY));
                     connection.putByte(DIRECTION_KEY, (byte) transformDirection(direction, sinkPos, context.getSetupTransform()).get3DDataValue());
                 }
@@ -1199,9 +1766,11 @@ public final class CableNetworkManager {
             connection.putLong(SOURCE_KEY, transformedSourcePos.subtract(transformedBackupPos).asLong());
             connection.putLong(SINK_KEY, transformedSinkPos.subtract(transformedBackupPos).asLong());
 
-            final Direction direction = Direction.from3DDataValue(connection.getByte(DIRECTION_KEY));
-            final Direction transformedDirection = transformDirection(direction, schematicBackupPos, setupTransform);
-            connection.putByte(DIRECTION_KEY, (byte) transformedDirection.get3DDataValue());
+            if (!isModuleSinkTag(connection)) {
+                final Direction direction = Direction.from3DDataValue(connection.getByte(DIRECTION_KEY));
+                final Direction transformedDirection = transformDirection(direction, schematicBackupPos, setupTransform);
+                connection.putByte(DIRECTION_KEY, (byte) transformedDirection.get3DDataValue());
+            }
         }
 
         final Direction savedFacing = Direction.byName(transformed.getString(FACING_KEY));

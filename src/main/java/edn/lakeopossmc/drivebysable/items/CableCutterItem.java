@@ -2,6 +2,7 @@ package edn.lakeopossmc.drivebysable.items;
 
 import com.simibubi.create.foundation.item.TooltipHelper;
 import edn.lakeopossmc.drivebysable.cable.CableNetworkManager;
+import edn.lakeopossmc.drivebysable.cable.SubTargetCableEndpoint;
 import edn.lakeopossmc.drivebysable.cable.CableServerFeedback;
 import edn.lakeopossmc.drivebysable.cable.graph.CableNetworkNode.CableNetworkSink;
 import net.minecraft.ChatFormatting;
@@ -15,11 +16,14 @@ import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.sounds.SoundEvents;
 import net.minecraft.sounds.SoundSource;
 import net.minecraft.world.InteractionResult;
+import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.TooltipFlag;
 import net.minecraft.world.item.context.UseOnContext;
 import net.minecraft.world.level.Level;
+
+import javax.annotation.Nullable;
 
 import java.util.List;
 import java.util.Map;
@@ -43,15 +47,21 @@ public class CableCutterItem extends Item {
         // * Get where click happened
         final BlockPos pos = context.getClickedPos();
 
+        // * A dashpanel is one block but many modules, each its own source
+        final String subTarget = resolveSubTarget(level, pos, context.getPlayer());
+
         // * Check if on client side first
         if (level.isClientSide()) {
-            final Map<String, Set<CableNetworkSink>> perChannel = CableNetworkManager.get(level).getNetwork().get(pos.asLong());
-            final boolean hasConnections = perChannel != null && perChannel.values().stream().anyMatch(sinks -> !sinks.isEmpty());
+            final boolean hasConnections = subTarget != null
+                    ? CableNetworkManager.hasConnectionsForSubTarget(level, pos, subTarget)
+                    : hasAnyConnection(level, pos);
             return hasConnections ? InteractionResult.SUCCESS : InteractionResult.FAIL;
         }
 
         // * Check whether connections were removed or not
-        final boolean removed = CableNetworkManager.removeAllFromSource((ServerPlayer) context.getPlayer(), level, pos);
+        final boolean removed = subTarget != null
+                ? CableNetworkManager.removeAllForSubTarget((ServerPlayer) context.getPlayer(), level, pos, subTarget)
+                : CableNetworkManager.removeAllFromSource((ServerPlayer) context.getPlayer(), level, pos);
         if (removed) {
             // * Play shear use sound if success
             level.playSound(null, pos, SoundEvents.SHEEP_SHEAR, SoundSource.BLOCKS, 1.0F, 1.0F);
@@ -62,6 +72,20 @@ public class CableCutterItem extends Item {
 
         // * Return correct trigger for item use anim
         return removed ? InteractionResult.SUCCESS : InteractionResult.FAIL;
+    }
+
+    // * Null when the block has no sub targets, or the crosshair is on bare surface
+    @Nullable
+    private static String resolveSubTarget(final Level level, final BlockPos pos, @Nullable final Player player) {
+        if (player == null || !(level.getBlockState(pos).getBlock() instanceof final SubTargetCableEndpoint endpoint)) {
+            return null;
+        }
+        return endpoint.cable$pickSubTarget(level, pos, player);
+    }
+
+    private static boolean hasAnyConnection(final Level level, final BlockPos pos) {
+        final Map<String, Set<CableNetworkSink>> perChannel = CableNetworkManager.get(level).getNetwork().get(pos.asLong());
+        return perChannel != null && perChannel.values().stream().anyMatch(sinks -> !sinks.isEmpty());
     }
     //#endregion
 

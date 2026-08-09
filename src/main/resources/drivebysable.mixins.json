@@ -20,14 +20,15 @@
     "compat.MixinLinkedTypewriterItemBindHandler",
     "compat.MixinTypewriterSaveKeyToItemPacket",
     "compat.MixinDriveByWireBlueprintEvent",
-    "compat.dashpanels.MixinPanelBlock",
-    "compat.dashpanels.MixinPanelBlockEntity",
-    "compat.aeroworks.MixinAeroworksConsoleBlock"
+    "compat.dashpanels.MixinAbstractPanelBlock",
+    "compat.dashpanels.MixinAbstractPanelBlockEntity",
+    "compat.toolgun.MixinToolgunApiBridge"
   ],
   "client": [
     "client.MixinLinkedControllerClientHandlerAccessor",
     "client.MixinTweakedLinkedControllerClientHandlerAccessor",
-    "client.MixinSchematicAndQuillHandler"
+    "client.MixinSchematicAndQuillHandler",
+    "compat.dashpanels.MixinAbstractPanelRenderer"
   ],
   "injectors": {
     "defaultRequire": 1

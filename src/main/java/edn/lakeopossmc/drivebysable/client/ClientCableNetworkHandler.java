@@ -1,0 +1,1235 @@
+package edn.lakeopossmc.drivebysable.client;
+
+import com.mojang.blaze3d.platform.InputConstants;
+import com.mojang.blaze3d.vertex.PoseStack;
+import com.mojang.blaze3d.vertex.VertexConsumer;
+import com.simibubi.create.AllBlocks;
+import com.simibubi.create.AllSoundEvents;
+import com.simibubi.create.CreateClient;
+import com.simibubi.create.content.kinetics.mechanicalArm.ArmInteractionPoint.Mode;
+import com.simibubi.create.content.redstone.link.controller.LinkedControllerItem;
+import com.simibubi.create.content.trains.track.TrackBlockOutline;
+import edn.lakeopossmc.drivebysable.CableBlocks;
+import edn.lakeopossmc.drivebysable.CableConfig;
+import edn.lakeopossmc.drivebysable.CableItems;
+import edn.lakeopossmc.drivebysable.DriveBySableMod;
+import edn.lakeopossmc.drivebysable.cable.CableNetworkManager;
+import edn.lakeopossmc.drivebysable.cable.ModuleSinkTarget;
+import edn.lakeopossmc.drivebysable.cable.MultiChannelCableSource;
+import edn.lakeopossmc.drivebysable.cable.SubTargetCableEndpoint;
+import edn.lakeopossmc.drivebysable.cable.graph.CableNetworkNode.CableNetworkSink;
+import edn.lakeopossmc.drivebysable.compat.TweakedControllerCableServerHandler;
+import edn.lakeopossmc.drivebysable.compat.keytranslator.TweakedKeybindResolver;
+import edn.lakeopossmc.drivebysable.items.CableItem;
+import edn.lakeopossmc.drivebysable.items.CableCutterItem;
+import edn.lakeopossmc.drivebysable.mixinducks.TweakedControllerDuck;
+import edn.lakeopossmc.drivebysable.network.CableAddConnectionPacket;
+import edn.lakeopossmc.drivebysable.network.CableNetworkRequestSyncPacket;
+import edn.lakeopossmc.drivebysable.network.MovementKeybindsPacket;
+import edn.lakeopossmc.drivebysable.network.TweakedKeybindsPacket;
+import edn.lakeopossmc.drivebysable.network.CableRemoveConnectionPacket;
+import edn.lakeopossmc.drivebysable.util.BlockFace;
+import edn.lakeopossmc.drivebysable.util.CableOutlineBox;
+import edn.lakeopossmc.drivebysable.util.FaceOutlines;
+import net.createmod.catnip.outliner.Outliner;
+import net.createmod.catnip.theme.Color;
+import net.minecraft.ChatFormatting;
+import net.minecraft.client.KeyMapping;
+import net.minecraft.client.Minecraft;
+import net.minecraft.client.Options;
+import net.minecraft.client.renderer.MultiBufferSource;
+import net.minecraft.client.renderer.RenderType;
+import net.minecraft.core.BlockPos;
+import net.minecraft.core.Direction;
+import net.minecraft.network.chat.Component;
+import net.minecraft.network.chat.MutableComponent;
+import net.minecraft.sounds.SoundSource;
+import net.minecraft.util.Mth;
+import net.minecraft.world.InteractionHand;
+import net.minecraft.world.entity.player.Player;
+import net.minecraft.world.item.Item;
+import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.level.Level;
+import net.minecraft.world.level.block.Block;
+import net.minecraft.world.level.block.state.BlockState;
+import net.minecraft.world.phys.AABB;
+import net.minecraft.world.phys.BlockHitResult;
+import net.minecraft.world.phys.HitResult;
+import net.minecraft.world.phys.Vec3;
+import net.minecraft.world.phys.shapes.VoxelShape;
+import net.neoforged.api.distmarker.Dist;
+import net.neoforged.bus.api.SubscribeEvent;
+import net.neoforged.fml.common.EventBusSubscriber;
+import net.neoforged.fml.ModList;
+import net.neoforged.neoforge.client.event.ClientTickEvent;
+import net.neoforged.neoforge.client.event.InputEvent;
+import net.neoforged.neoforge.client.event.RenderHighlightEvent;
+import net.neoforged.neoforge.common.util.TriState;
+import net.neoforged.neoforge.event.entity.player.PlayerInteractEvent;
+import net.neoforged.neoforge.event.level.LevelEvent;
+import net.neoforged.neoforge.network.PacketDistributor;
+
+import javax.annotation.Nullable;
+import java.util.ArrayList;
+import java.util.HashSet;
+import java.util.Iterator;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.Objects;
+import java.util.Set;
+
+// --- CLIENT SIDE CABLE TOOL LOGIC --- //
+// * Handles selection, connections, outlines, and hover tips
+@EventBusSubscriber(modid = DriveBySableMod.MOD_ID, value = Dist.CLIENT)
+public final class ClientCableNetworkHandler {
+    private static final AABB UNIT_CUBE = AABB.unitCubeFromLowerCorner(Vec3.ZERO);
+    private static final Map<Long, Map<String, Set<CableNetworkSink>>> EMPTY_NETWORK = Map.of();
+    private static final float OUTLINE_LINE_WIDTH = 0.0625F;
+    // * Hover outline colour when the thing under the crosshair is further from the
+    // * selected source than the configured range allows
+    private static final int OUT_OF_RANGE_COLOR = 0xFF4444;
+    // * Module boxes take their thickness from RenderType.lines
+
+    private static Map<Long, Map<String, Set<CableNetworkSink>>> currentNetwork = EMPTY_NETWORK;
+    private static BlockPos selectedSource;
+    // * Null when the whole block is the source
+    private static String selectedSourceModule;
+    private static String currentChannel = CableNetworkManager.WORLD_CHANNEL;
+
+    // * An output module with more than one channel waits here
+    private static BlockPos armedSinkPos;
+    private static String armedSinkModule;
+    private static String armedSinkChannel;
+
+    // * Module boxes are not drawn from here
+    private static final Map<BlockPos, Map<String, Integer>> moduleOutlines = new LinkedHashMap<>();
+
+    // * Toggled by an optional keybind
+    private static boolean hideInactiveChannels;
+
+    private static int syncCooldown;
+    private static String pendingSchematicSyncReason;
+    private static final List<ScheduledFlash> scheduledFlashes = new ArrayList<>();
+
+    private ClientCableNetworkHandler() {
+    }
+
+    @SubscribeEvent
+    public static void onWorldUnload(final LevelEvent.Unload event) {
+        clearSource();
+    }
+
+    //#region // --- MAIN CLICK HANDLING --- //
+    // * Cable and non shift cutter fully take over the click
+    // * Linked controller items are blocked from opening hub menus
+    @SubscribeEvent
+    public static void onRightClickBlock(final PlayerInteractEvent.RightClickBlock event) {
+        final Item eventItem = event.getItemStack().getItem();
+        final BlockState hitBlock = event.getLevel().getBlockState(event.getHitVec().getBlockPos());
+        final Player eventPlayer = event.getEntity();
+
+        final boolean isCutter = eventItem instanceof CableCutterItem;
+        final boolean cutterShiftDown = isCutter && eventPlayer != null && eventPlayer.isShiftKeyDown();
+
+        if (eventItem instanceof CableItem || isCutter) {
+            event.setUseBlock(TriState.FALSE);
+        }
+        if (isCutter && !cutterShiftDown) {
+            event.setUseItem(TriState.FALSE);
+        }
+        if ((eventItem instanceof LinkedControllerItem && hitBlock.is(CableBlocks.CABLE_HUB) || (eventItem instanceof TweakedControllerDuck && hitBlock.is(CableBlocks.ADVANCED_CABLE_HUB)))) {
+            event.setUseItem(TriState.FALSE);
+        }
+        if (event.getSide().isServer()) {
+            return;
+        }
+
+        final Player player = eventPlayer;
+        if (player == null || player.isSpectator()) {
+            return;
+        }
+
+        if (event.getHand() != InteractionHand.MAIN_HAND) {
+            return;
+        }
+
+        final ItemStack heldItem = event.getItemStack();
+        final Level level = event.getLevel();
+        final BlockPos pos = event.getPos();
+        final Direction face = event.getFace() == null ? Direction.UP : event.getFace();
+
+        if (heldItem.is(CableItems.CABLE.get())) {
+            final boolean acted = handleCableUse(player, heldItem, level, pos, face);
+            event.setCancellationResult(acted ? net.minecraft.world.InteractionResult.SUCCESS : net.minecraft.world.InteractionResult.FAIL);
+            event.setCanceled(true);
+            return;
+        }
+
+        if (heldItem.is(CableItems.CABLE_CUTTER.get()) && !cutterShiftDown) {
+            final boolean acted = handleCutterUse(player, level, pos, face);
+            event.setCancellationResult(acted ? net.minecraft.world.InteractionResult.SUCCESS : net.minecraft.world.InteractionResult.FAIL);
+            event.setCanceled(true);
+        }
+    }
+    //#endregion
+
+    //#region // --- MODAL SCROLL --- //
+    // * Exactly one channel list is live at a time
+    @SubscribeEvent
+    public static void onMouseScrolled(final InputEvent.MouseScrollingEvent event) {
+        final Player player = Minecraft.getInstance().player;
+        if (player == null || selectedSource == null) {
+            return;
+        }
+
+        final ItemStack mainHandItem = player.getMainHandItem();
+        if (!mainHandItem.is(CableItems.CABLE.get()) && !mainHandItem.is(CableItems.CABLE_CUTTER.get())) {
+            return;
+        }
+
+        final double delta = event.getScrollDeltaY();
+        if (delta == 0) {
+            return;
+        }
+
+        final Level level = player.level();
+        if (armedSinkModule != null) {
+            changeArmedSinkChannel(level, player, delta > 0);
+        } else {
+            changeChannel(level.getBlockState(selectedSource).getBlock(), delta > 0);
+        }
+        event.setCanceled(true);
+    }
+    //#endregion
+
+    //#region // --- MAIN CLIENT TICK --- //
+    // * Keeps mirror synced, draws outlines, shows tip
+    @SubscribeEvent(priority = net.neoforged.bus.api.EventPriority.HIGH)
+    public static void onClientTick(final ClientTickEvent.Post event) {
+        final Minecraft minecraft = Minecraft.getInstance();
+        final Player player = minecraft.player;
+        final Level level = minecraft.level;
+        if (player == null || level == null) {
+            return;
+        }
+
+        // * Runs regardless of held item so a flash finishes even after switching tools
+        if (!scheduledFlashes.isEmpty()) {
+            final Iterator<ScheduledFlash> flashIterator = scheduledFlashes.iterator();
+            while (flashIterator.hasNext()) {
+                final ScheduledFlash flash = flashIterator.next();
+                if (--flash.ticksRemaining <= 0) {
+                    flash.action.run();
+                    flashIterator.remove();
+                }
+            }
+        }
+
+        while (CableKeyMappings.HIDE_INACTIVE_CHANNELS.consumeClick()) {
+            hideInactiveChannels = !hideInactiveChannels;
+            player.displayClientMessage(
+                    Component.translatable(
+                            "drivebysable.cable_actions.inactive_channels",
+                            Component.translatable(hideInactiveChannels
+                                            ? "drivebysable.cable_actions.hidden"
+                                            : "drivebysable.cable_actions.shown")
+                                    .withStyle(hideInactiveChannels ? ChatFormatting.RED : ChatFormatting.GREEN)
+                    ).withStyle(ChatFormatting.GRAY),
+                    true
+            );
+        }
+
+        final ItemStack mainHand = player.getMainHandItem();
+        final boolean holdingCableTool = mainHand.is(CableItems.CABLE.get()) || mainHand.is(CableItems.CABLE_CUTTER.get());
+        final boolean holdingClipboard = AllBlocks.CLIPBOARD.isIn(mainHand);
+
+        // * Clipboard needed for the empty source copy check
+        if (holdingCableTool || holdingClipboard || pendingSchematicSyncReason != null) {
+            final Map<Long, Map<String, Set<CableNetworkSink>>> latestNetwork = CableNetworkManager.get(level).getNetwork();
+            if (!latestNetwork.equals(currentNetwork)) {
+                currentNetwork = latestNetwork;
+                if (pendingSchematicSyncReason != null) {
+                    DriveBySableMod.LOGGER.info(
+                            "[schematic-debug] Client cable mirror refreshed after {}: {} sources / {} connections.",
+                            pendingSchematicSyncReason,
+                            currentNetwork.size(),
+                            countConnections(currentNetwork)
+                    );
+                    pendingSchematicSyncReason = null;
+                }
+            }
+        }
+
+        if (!holdingCableTool) {
+            clearSource();
+        }
+
+        // * Clipboard needs sync request
+        if ((holdingCableTool || holdingClipboard) && --syncCooldown <= 0) {
+            syncManager();
+            if (holdingClipboard) {
+                sendMovementKeybinds();
+                if (ModList.get().isLoaded("create_tweaked_controllers")) {
+                    sendTweakedKeybinds();
+                }
+            }
+        }
+
+        if (!holdingCableTool) {
+            moduleOutlines.clear();
+            return;
+        }
+
+        if (mainHand.is(CableItems.CABLE.get())) {
+            showCableHoverTip(minecraft, level, player);
+        }
+
+        // * Rebuilt from scratch each tick
+        moduleOutlines.clear();
+
+        if (selectedSource != null) {
+            drawSourceOutline(level, selectedSource, selectedSourceModule, LineColor.SOURCE.SELECTED.getColor());
+        }
+
+        // * The armed output gets the sink highlight straight away
+        if (armedSinkPos != null && armedSinkModule != null) {
+            drawModuleOutline(level, armedSinkPos, armedSinkModule, "cableArmedSink", LineColor.SINK.SELECTED.getColor());
+        }
+
+        drawOutlines(level, selectedSource, currentNetwork, currentChannel);
+
+        // * Same treatment for a module under the crosshair
+        if (minecraft.hitResult instanceof final BlockHitResult hover
+                && minecraft.hitResult.getType() == HitResult.Type.BLOCK) {
+            final BlockPos hoverPos = hover.getBlockPos();
+            final String hoverModule = pickSubTarget(level, hoverPos, player);
+            if (hoverModule != null && isHoverBlocked(level, hoverPos)) {
+                drawModuleOutline(level, hoverPos, hoverModule, "cableOutOfRange", OUT_OF_RANGE_COLOR);
+            }
+        }
+    }
+    //#endregion
+
+    //#region // --- WHITE HITBOX WHILE HOLDING CABLE --- //
+    @SubscribeEvent
+    public static void onRenderBlockHighlight(final RenderHighlightEvent.Block event) {
+        final Minecraft minecraft = Minecraft.getInstance();
+        final Player player = minecraft.player;
+        if (player == null || player.isSpectator()) {
+            return;
+        }
+
+        if (!player.getMainHandItem().is(CableItems.CABLE.get())) {
+            return;
+        }
+
+        final Level level = minecraft.level;
+        final BlockPos pos = event.getTarget().getBlockPos();
+        if (level == null || !level.getWorldBorder().isWithinBounds(pos)) {
+            return;
+        }
+
+        final Vec3 camera = event.getCamera().getPosition();
+        final PoseStack poseStack = event.getPoseStack();
+
+        // * Modules are outlined by the panel renderer
+        if (pickSubTarget(level, pos, player) != null) {
+            event.setCanceled(true);
+            return;
+        }
+
+        final VoxelShape shape = level.getBlockState(pos).getShape(level, pos);
+        if (shape.isEmpty()) {
+            return;
+        }
+
+        poseStack.pushPose();
+        poseStack.translate(pos.getX() - camera.x, pos.getY() - camera.y, pos.getZ() - camera.z);
+
+        if (isHoverBlocked(level, pos)) {
+            renderShapeEdges(shape, poseStack, event.getMultiBufferSource().getBuffer(RenderType.lines()), OUT_OF_RANGE_COLOR, 0.6F);
+        } else {
+            TrackBlockOutline.renderShape(shape, poseStack, event.getMultiBufferSource().getBuffer(RenderType.lines()), true);
+        }
+
+        event.setCanceled(true);
+        poseStack.popPose();
+    }
+
+    // * Only meaningful once a source is picked
+    private static boolean isHoverBlocked(final Level level, final BlockPos pos) {
+        if (selectedSource == null) {
+            return CableNetworkManager.wouldExceedSourceLimit(level, pos);
+        }
+
+        if (CableNetworkManager.checkRange(level, selectedSource, pos).blocked()) {
+            return true;
+        }
+
+        // * A full channel refuses every new output
+        return CableNetworkManager.wouldExceedSinkLimit(level, selectedSource, currentChannel)
+                && !activeChannelHasSinkAt(pos);
+    }
+
+    // * Does the active channel already drive something at this position?
+    private static boolean activeChannelHasSinkAt(final BlockPos pos) {
+        final long posKey = pos.asLong();
+        return currentNetwork
+                .getOrDefault(selectedSource.asLong(), Map.of())
+                .getOrDefault(currentChannel, Set.of())
+                .stream()
+                .anyMatch(sink -> sink.position() == posKey);
+    }
+
+    // * Edges of a voxel shape as coloured lines
+    private static void renderShapeEdges(
+            final VoxelShape shape,
+            final PoseStack poseStack,
+            final VertexConsumer buffer,
+            final int color,
+            final float alpha
+    ) {
+        final float red = ((color >> 16) & 0xFF) / 255.0F;
+        final float green = ((color >> 8) & 0xFF) / 255.0F;
+        final float blue = (color & 0xFF) / 255.0F;
+        final PoseStack.Pose pose = poseStack.last();
+
+        shape.forAllEdges((x1, y1, z1, x2, y2, z2) -> {
+            float dx = (float) (x2 - x1);
+            float dy = (float) (y2 - y1);
+            float dz = (float) (z2 - z1);
+            final float length = Mth.sqrt(dx * dx + dy * dy + dz * dz);
+            if (length < 1.0E-5F) {
+                return;
+            }
+
+            dx /= length;
+            dy /= length;
+            dz /= length;
+            buffer.addVertex(pose, (float) x1, (float) y1, (float) z1)
+                    .setColor(red, green, blue, alpha)
+                    .setNormal(pose, dx, dy, dz);
+            buffer.addVertex(pose, (float) x2, (float) y2, (float) z2)
+                    .setColor(red, green, blue, alpha)
+                    .setNormal(pose, dx, dy, dz);
+        });
+    }
+
+    //#endregion
+
+    public static void clearSource() {
+        moduleOutlines.clear();
+        currentNetwork = EMPTY_NETWORK;
+        selectedSource = null;
+        selectedSourceModule = null;
+        currentChannel = CableNetworkManager.WORLD_CHANNEL;
+        syncCooldown = 0;
+        clearArmedSink();
+    }
+
+    private static void clearArmedSink() {
+        armedSinkPos = null;
+        armedSinkModule = null;
+        armedSinkChannel = null;
+    }
+
+    // * Used by CableItem for the enchant glint while a source is selected
+    public static boolean isInSetupMode() {
+        return selectedSource != null;
+    }
+
+    public static String getCurrentChannel() {
+        return currentChannel;
+    }
+
+    public static void requestSchematicSync(final String reason) {
+        pendingSchematicSyncReason = reason;
+        DriveBySableMod.LOGGER.info(
+                "[schematic-debug] Requesting cable mirror sync for {}. Current client mirror: {} sources / {} connections.",
+                reason,
+                currentNetwork.size(),
+                countConnections(currentNetwork)
+        );
+        syncManager();
+    }
+
+    //#region // --- SUB TARGET LOOKUPS --- //
+    // * Which module the crosshair is on
+    @Nullable
+    private static String pickSubTarget(final Level level, final BlockPos pos, final Player player) {
+        return level.getBlockState(pos).getBlock() instanceof final SubTargetCableEndpoint endpoint
+                ? endpoint.cable$pickSubTarget(level, pos, player)
+                : null;
+    }
+
+    private static List<CableOutlineBox> subTargetOutline(final Level level, final BlockPos pos, @Nullable final String subTarget) {
+        if (subTarget == null || !(level.getBlockState(pos).getBlock() instanceof final SubTargetCableEndpoint endpoint)) {
+            return List.of();
+        }
+        return endpoint.cable$getSubTargetOutline(level, pos, subTarget);
+    }
+
+    @Nullable
+    private static String subTargetForChannel(final Level level, final BlockPos pos, final String channel) {
+        return level.getBlockState(pos).getBlock() instanceof final SubTargetCableEndpoint endpoint
+                ? endpoint.cable$subTargetForChannel(level, pos, channel)
+                : null;
+    }
+
+    private static boolean isSourceSubTarget(final Level level, final BlockPos pos, final String subTarget) {
+        return level.getBlockState(pos).getBlock() instanceof final SubTargetCableEndpoint endpoint
+                && endpoint.cable$isSourceSubTarget(level, pos, subTarget);
+    }
+
+    private static boolean isSinkSubTarget(final Level level, final BlockPos pos, final String subTarget) {
+        return level.getBlockState(pos).getBlock() instanceof final SubTargetCableEndpoint endpoint
+                && endpoint.cable$isSinkSubTarget(level, pos, subTarget);
+    }
+
+    private static List<String> sinkChannelsFor(final Level level, final BlockPos pos, final String subTarget) {
+        return level.getBlockState(pos).getBlock() instanceof final ModuleSinkTarget target
+                ? target.cable$getSinkChannels(level, pos, subTarget)
+                : List.of();
+    }
+
+    // * Where a cable line should start or end
+    private static Vec3 anchorOf(final Level level, final BlockPos pos, @Nullable final String subTarget) {
+        final List<CableOutlineBox> boxes = subTargetOutline(level, pos, subTarget);
+        return boxes.isEmpty() ? Vec3.atCenterOf(pos) : boxes.getFirst().center();
+    }
+    //#endregion
+
+    //#region // --- CABLE CLICK FLOW --- //
+    // * First click picks a source, a later click on the same endpoint deselects
+    // * Otherwise the click either toggles a connection outright, or arms a multi channel output
+    private static boolean handleCableUse(final Player player, final ItemStack heldItem, final Level level, final BlockPos pos, final Direction face) {
+        final String subTarget = pickSubTarget(level, pos, player);
+
+        // * Nothing selected yet
+        if (selectedSource == null) {
+            if (subTarget != null && !isSourceSubTarget(level, pos, subTarget)) {
+                showInvalidOperationMessage(player, "drivebysable.invalid_op.not_a_source");
+                return false;
+            }
+
+            // * Refuse setup mode outright
+            if (CableNetworkManager.wouldExceedSourceLimit(level, pos)) {
+                showInvalidOperationMessage(player, CableNetworkManager.sourceLimitLangKey(level, pos));
+                return false;
+            }
+
+            selectedSource = pos.immutable();
+            selectedSourceModule = subTarget;
+            clearArmedSink();
+            changeChannel(level.getBlockState(pos).getBlock(), true);
+            syncManager();
+            return true;
+        }
+
+        // * Clicking endpoint started from leaves setup mode
+        if (selectedSource.equals(pos) && Objects.equals(selectedSourceModule, subTarget)) {
+            clearSource();
+            return true;
+        }
+
+        // * Second click on an armed output confirms whatever channel is showing
+        if (armedSinkModule != null && armedSinkPos.equals(pos) && armedSinkModule.equals(subTarget)) {
+            final String confirmed = armedSinkChannel;
+            clearArmedSink();
+            return toggleConnection(player, heldItem, level, pos, face, confirmed, true);
+        }
+
+        if (subTarget != null) {
+            if (!isSinkSubTarget(level, pos, subTarget)) {
+                showInvalidOperationMessage(player, "drivebysable.invalid_op.not_an_output");
+                return false;
+            }
+
+            final List<String> channels = sinkChannelsFor(level, pos, subTarget);
+            if (channels.isEmpty()) {
+                showInvalidOperationMessage(player, "drivebysable.invalid_op.no_output_channels");
+                return false;
+            }
+
+            // * Only one channel to choose from, so there is nothing to arm
+            if (channels.size() == 1) {
+                clearArmedSink();
+                return toggleConnection(player, heldItem, level, pos, face, channels.getFirst(), true);
+            }
+
+            armSink(level, player, pos, subTarget, channels);
+            return true;
+        }
+
+        // * Plain block face
+        clearArmedSink();
+        return toggleConnection(player, heldItem, level, pos, face, CableNetworkSink.BLOCK_FACE, true);
+    }
+
+    // * Same as cable but blocks selecting a source with no connections
+    private static boolean handleCutterUse(final Player player, final Level level, final BlockPos pos, final Direction face) {
+        final String subTarget = pickSubTarget(level, pos, player);
+
+        if (selectedSource == null) {
+            if (!hasConnections(pos)) {
+                showInvalidOperationMessage(player, "drivebysable.invalid_op.no_connections");
+                return false;
+            }
+
+            selectedSource = pos.immutable();
+            selectedSourceModule = subTarget;
+            clearArmedSink();
+            changeChannel(level.getBlockState(pos).getBlock(), true);
+            syncManager();
+            return true;
+        }
+
+        if (selectedSource.equals(pos) && Objects.equals(selectedSourceModule, subTarget)) {
+            clearSource();
+            return true;
+        }
+
+        if (armedSinkModule != null && armedSinkPos.equals(pos) && armedSinkModule.equals(subTarget)) {
+            final String confirmed = armedSinkChannel;
+            clearArmedSink();
+            return toggleConnection(player, ItemStack.EMPTY, level, pos, face, confirmed, false);
+        }
+
+        if (subTarget != null) {
+            // * Cutter only offers the connected channels
+            final List<String> channels = connectedSinkChannels(level, pos, subTarget);
+            if (channels.isEmpty()) {
+                showInvalidOperationMessage(player, "drivebysable.invalid_op.no_connections");
+                return false;
+            }
+
+            if (channels.size() == 1) {
+                clearArmedSink();
+                return toggleConnection(player, ItemStack.EMPTY, level, pos, face, channels.getFirst(), false);
+            }
+
+            armSink(level, player, pos, subTarget, channels);
+            return true;
+        }
+
+        clearArmedSink();
+        return toggleConnection(player, ItemStack.EMPTY, level, pos, face, CableNetworkSink.BLOCK_FACE, false);
+    }
+
+    // * Hold an output while the player scrolls its channels
+    private static void armSink(
+            final Level level,
+            final Player player,
+            final BlockPos pos,
+            final String subTarget,
+            final List<String> channels
+    ) {
+        armedSinkPos = pos.immutable();
+        armedSinkModule = subTarget;
+
+        final List<String> connected = connectedSinkChannels(level, pos, subTarget);
+        armedSinkChannel = connected.isEmpty() ? channels.getFirst() : connected.getFirst();
+
+        announceChannel(player, "drivebysable.cable.output_channel.selected", armedSinkChannel);
+    }
+
+    private static void changeArmedSinkChannel(final Level level, final Player player, final boolean forward) {
+        if (!(level.getBlockState(armedSinkPos).getBlock() instanceof final ModuleSinkTarget target)) {
+            return;
+        }
+
+        final String next = target.cable$nextSinkChannel(level, armedSinkPos, armedSinkModule, armedSinkChannel, forward);
+        if (next == null) {
+            return;
+        }
+
+        armedSinkChannel = next;
+        announceChannel(player, "drivebysable.cable.output_channel.selected", armedSinkChannel);
+    }
+
+    // * Channels on this module
+    private static List<String> connectedSinkChannels(final Level level, final BlockPos pos, final String subTarget) {
+        if (selectedSource == null) {
+            return List.of();
+        }
+
+        final Set<CableNetworkSink> onChannel = currentNetwork
+                .getOrDefault(selectedSource.asLong(), Map.of())
+                .getOrDefault(currentChannel, Set.of());
+
+        final List<String> connected = new ArrayList<>();
+        for (final String channel : sinkChannelsFor(level, pos, subTarget)) {
+            if (onChannel.contains(CableNetworkSink.ofModule(pos, channel))) {
+                connected.add(channel);
+            }
+        }
+        return connected;
+    }
+
+    // * Add when absent, remove when present
+    private static boolean toggleConnection(
+            final Player player,
+            final ItemStack heldItem,
+            final Level level,
+            final BlockPos pos,
+            final Direction face,
+            final String sinkChannel,
+            final boolean allowAdd
+    ) {
+        final Map<String, Set<CableNetworkSink>> currentSelection = currentNetwork.get(selectedSource.asLong());
+        final CableNetworkSink sink = CableNetworkSink.of(pos, face, sinkChannel);
+
+        if (currentSelection != null && currentSelection.getOrDefault(currentChannel, Set.of()).contains(sink)) {
+            if (allowAdd && !CableConfig.CONFIG.allowCableDisconnect.get()) {
+                showInvalidOperationMessage(player, "drivebysable.invalid_op.cable_removal_disabled");
+                return false;
+            }
+
+            PacketDistributor.sendToServer(
+                    new CableRemoveConnectionPacket(selectedSource, pos, sink.facing(), currentChannel, sink.sinkChannel())
+            );
+            return true;
+        }
+
+        if (!allowAdd) {
+            return false;
+        }
+
+        // * Checked here so the player gets the flash and deny sound on the click
+        if (selectedSource.equals(pos) && (sinkChannel.isEmpty() || currentChannel.equals(sinkChannel))) {
+            showInvalidOperationMessage(player, "drivebysable.invalid_op.same_block");
+            return false;
+        }
+
+        if (CableNetworkManager.wouldExceedSourceLimit(level, selectedSource)) {
+            showInvalidOperationMessage(player, CableNetworkManager.sourceLimitLangKey(level, selectedSource));
+            return false;
+        }
+
+        if (CableNetworkManager.wouldExceedSinkLimit(level, selectedSource, currentChannel)) {
+            showInvalidOperationMessage(player, "drivebysable.invalid_op.too_many_sinks");
+            return false;
+        }
+
+        final CableNetworkManager.RangeResult range = CableNetworkManager.checkRange(level, selectedSource, pos);
+        if (range.blocked()) {
+            showInvalidOperationMessage(player, range == CableNetworkManager.RangeResult.CROSS_LEVEL
+                    ? "drivebysable.invalid_op.cross_level"
+                    : "drivebysable.invalid_op.out_of_range");
+            return false;
+        }
+
+        PacketDistributor.sendToServer(
+                new CableAddConnectionPacket(selectedSource, pos, sink.facing(), currentChannel, sink.sinkChannel())
+        );
+        if (CableConfig.CONFIG.shouldConsumeCables.get()) {
+            heldItem.consume(1, player);
+        }
+        return true;
+    }
+
+    public static boolean hasConnections(final BlockPos pos) {
+        final Map<String, Set<CableNetworkSink>> perChannel = currentNetwork.get(pos.asLong());
+        return perChannel != null && perChannel.values().stream().anyMatch(sinks -> !sinks.isEmpty());
+    }
+    //#endregion
+
+    //#region // --- INVALID OP FLASH MESSAGE --- //
+    // * Display message in red, then flash white
+    public static void showInvalidOperationMessage(final Player player, final String langKey) {
+        player.displayClientMessage(Component.translatable(langKey).withStyle(ChatFormatting.RED), true);
+        scheduledFlashes.add(new ScheduledFlash(2, () -> {
+            player.displayClientMessage(Component.translatable(langKey).withStyle(ChatFormatting.WHITE), true);
+            final BlockPos pos = player.blockPosition();
+            player.level().playLocalSound(pos.getX() + 0.5, pos.getY() + 0.5, pos.getZ() + 0.5,
+                    AllSoundEvents.DENY.getMainEvent(), SoundSource.PLAYERS, 1.0F, 0.5F, false);
+        }));
+        scheduledFlashes.add(new ScheduledFlash(4, () ->
+                player.displayClientMessage(Component.translatable(langKey).withStyle(ChatFormatting.RED), true)));
+    }
+
+    // * Tiny delayed task, ticked down in onClientTick
+    private static final class ScheduledFlash {
+        int ticksRemaining;
+        final Runnable action;
+
+        ScheduledFlash(final int ticksRemaining, final Runnable action) {
+            this.ticksRemaining = ticksRemaining;
+            this.action = action;
+        }
+    }
+    //#endregion
+
+    //#region // --- CABLE ACTIONS HOVER TIP --- //
+    // * Text tracks the state machine
+    private static void showCableHoverTip(final Minecraft minecraft, final Level level, final Player player) {
+        final List<MutableComponent> tip = new ArrayList<>();
+        tip.add(Component.translatable("drivebysable.cable_actions.header"));
+
+        final HitResult hitResult = minecraft.hitResult;
+        final boolean hitBlock = hitResult instanceof BlockHitResult && hitResult.getType() == HitResult.Type.BLOCK;
+
+        if (selectedSource == null) {
+            if (!hitBlock) {
+                return;
+            }
+
+            // * Say the cap is reached
+            final BlockPos entryPos = ((BlockHitResult) hitResult).getBlockPos();
+            if (CableNetworkManager.wouldExceedSourceLimit(level, entryPos)) {
+                tip.add(Component.translatable("drivebysable.cable_actions.source_limit_reached")
+                        .withStyle(net.minecraft.ChatFormatting.RED));
+            } else {
+                tip.add(Component.translatable("drivebysable.cable_actions.enter_setup", Component.keybind("key.use")));
+            }
+
+            CreateClient.VALUE_SETTINGS_HANDLER.showHoverTip(tip);
+            return;
+        }
+
+        // * An armed output owns scroll until it is confirmed
+        if (armedSinkModule != null) {
+            tip.add(Component.translatable("drivebysable.cable_actions.select_output_channel"));
+            tip.add(Component.translatable("drivebysable.cable_actions.confirm_output", Component.keybind("key.use")));
+            CreateClient.VALUE_SETTINGS_HANDLER.showHoverTip(tip);
+            return;
+        }
+
+        final BlockPos hitPos = hitBlock ? ((BlockHitResult) hitResult).getBlockPos() : null;
+        final String subTarget = hitPos == null ? null : pickSubTarget(level, hitPos, player);
+
+        if (hitPos != null && selectedSource.equals(hitPos) && Objects.equals(selectedSourceModule, subTarget)) {
+            tip.add(Component.translatable("drivebysable.cable_actions.exit_setup", Component.keybind("key.use")));
+            CreateClient.VALUE_SETTINGS_HANDLER.showHoverTip(tip);
+            return;
+        }
+
+        tip.add(Component.translatable("drivebysable.cable_actions.select_channel"));
+
+        // * Say so before the click
+        if (CableNetworkManager.wouldExceedSinkLimit(level, selectedSource, currentChannel)
+                && (hitPos == null || !activeChannelHasSinkAt(hitPos))) {
+            tip.add(Component.translatable("drivebysable.cable_actions.output_limit_reached")
+                    .withStyle(net.minecraft.ChatFormatting.RED));
+            CreateClient.VALUE_SETTINGS_HANDLER.showHoverTip(tip);
+            return;
+        }
+
+        final CableNetworkManager.RangeResult hoverRange = hitPos == null
+                ? CableNetworkManager.RangeResult.OK
+                : CableNetworkManager.checkRange(level, selectedSource, hitPos);
+        if (hoverRange.blocked()) {
+            tip.add(Component.translatable(hoverRange == CableNetworkManager.RangeResult.CROSS_LEVEL
+                            ? "drivebysable.cable_actions.cross_level"
+                            : "drivebysable.cable_actions.out_of_range")
+                    .withStyle(net.minecraft.ChatFormatting.RED));
+            CreateClient.VALUE_SETTINGS_HANDLER.showHoverTip(tip);
+            return;
+        }
+
+        // * Flag that this output needs a channel picked
+        if (hitPos != null && subTarget != null
+                && isSinkSubTarget(level, hitPos, subTarget)
+                && sinkChannelsFor(level, hitPos, subTarget).size() > 1) {
+            tip.add(Component.translatable("drivebysable.cable_actions.choose_output_channel", Component.keybind("key.use")));
+        } else {
+            tip.add(Component.translatable(
+                    CableConfig.CONFIG.allowCableDisconnect.get()
+                            ? "drivebysable.cable_actions.toggle_output"
+                            : "drivebysable.cable_actions.add_output",
+                    Component.keybind("key.use")
+            ));
+        }
+
+        CreateClient.VALUE_SETTINGS_HANDLER.showHoverTip(tip);
+    }
+    //#endregion
+
+    private static void syncManager() {
+        PacketDistributor.sendToServer(CableNetworkRequestSyncPacket.INSTANCE);
+        syncCooldown = 20;
+    }
+
+    // * Same key mapping fields ControlsUtil reads for the linked controller
+    private static void sendMovementKeybinds() {
+        final Options options = Minecraft.getInstance().options;
+        PacketDistributor.sendToServer(new MovementKeybindsPacket(
+                resolveKeycode(options.keyUp),
+                resolveKeycode(options.keyDown),
+                resolveKeycode(options.keyLeft),
+                resolveKeycode(options.keyRight),
+                resolveKeycode(options.keyJump),
+                resolveKeycode(options.keyShift)
+        ));
+    }
+
+    // * Only called once the mod is confirmed loaded
+    private static void sendTweakedKeybinds() {
+        PacketDistributor.sendToServer(new TweakedKeybindsPacket(TweakedKeybindResolver.resolveAll()));
+    }
+
+    private static int resolveKeycode(final KeyMapping mapping) {
+        final InputConstants.Key key = mapping.getKey();
+        return key.getType() == InputConstants.Type.KEYSYM ? key.getValue() : -1;
+    }
+
+    // * Scoped to the selected module when the source block has sub targets
+    private static void changeChannel(final Block source, final boolean forward) {
+        final Level level = Minecraft.getInstance().level;
+        if (level == null || selectedSource == null) {
+            return;
+        }
+
+        currentChannel = source instanceof final MultiChannelCableSource channelSource
+                ? channelSource.cable$nextChannel(level, selectedSource, selectedSourceModule, currentChannel, forward)
+                : CableNetworkManager.WORLD_CHANNEL;
+
+        if (currentChannel == null) {
+            currentChannel = CableNetworkManager.WORLD_CHANNEL;
+        }
+
+        final Player player = Minecraft.getInstance().player;
+        if (player != null) {
+            announceChannel(player, "drivebysable.cable.channel.selected", currentChannel);
+        }
+    }
+
+    // * Look up display name, fall back to raw channel id
+    private static void announceChannel(final Player player, final String messageKey, final String channel) {
+        final String langKey = TweakedControllerCableServerHandler.CHANNEL_TO_LANG_KEY.getOrDefault(channel, channel);
+        player.displayClientMessage(Component.translatable(messageKey, Component.translatable(langKey)), true);
+    }
+
+    //#region // --- DRAW ALL NETWORK OUTLINES --- //
+    // * Selected source gets full connection detail
+    // * Everything else just gets a plain box
+    private static void drawOutlines(
+            final Level level,
+            final BlockPos selectedSource,
+            final Map<Long, Map<String, Set<CableNetworkSink>>> network,
+            final String activeChannel
+    ) {
+        for (final Map.Entry<Long, Map<String, Set<CableNetworkSink>>> entry : network.entrySet()) {
+            final BlockPos source = BlockPos.of(entry.getKey());
+            final Map<String, Set<CableNetworkSink>> perChannel = entry.getValue();
+
+            if (selectedSource != null && source.equals(selectedSource)) {
+                // * A panel hosts one source per module
+                final Map<String, Set<CableNetworkSink>> ownChannels = new LinkedHashMap<>();
+                final Set<String> siblingModules = new HashSet<>();
+
+                perChannel.forEach((channel, sinksOnChannel) -> {
+                    if (selectedSourceModule == null) {
+                        ownChannels.put(channel, sinksOnChannel);
+                        return;
+                    }
+
+                    final String owner = subTargetForChannel(level, source, channel);
+                    if (selectedSourceModule.equals(owner)) {
+                        ownChannels.put(channel, sinksOnChannel);
+                    } else if (owner != null) {
+                        siblingModules.add(owner);
+                    }
+                });
+
+                // * Track endpoints already used by the active channel
+                final Set<CableNetworkSink> activeSinks = new HashSet<>(ownChannels.getOrDefault(activeChannel, Set.of()));
+
+                for (final Map.Entry<String, Set<CableNetworkSink>> channelEntry : ownChannels.entrySet()) {
+                    final boolean active = channelEntry.getKey().equals(activeChannel);
+
+                    // * The greyed out channels are the ones this hides
+                    if (!active && hideInactiveChannels) {
+                        continue;
+                    }
+
+                    for (final CableNetworkSink sink : channelEntry.getValue()) {
+                        if (!active && activeSinks.contains(sink)) {
+                            continue;
+                        }
+                        drawConnection(
+                                level,
+                                source,
+                                sink,
+                                channelEntry.getKey(),
+                                active ? LineColor.SINK.SELECTED.getColor() : LineColor.SINK.SAME_SOURCE_DIFFERENT_CHANNEL.getColor(),
+                                active ? LineColor.CABLE.SELECTED.getColor() : LineColor.CABLE.SAME_SOURCE_DIFFERENT_CHANNEL.getColor()
+                        );
+                    }
+                }
+
+                // * Wired modules elsewhere on this panel are just other sources
+                siblingModules.forEach(module -> drawModuleOutline(
+                        level,
+                        source,
+                        module,
+                        "cableNetworkSource",
+                        LineColor.SOURCE.SAME_NETWORK.getColor()
+                ));
+            } else {
+                drawUnselectedSource(level, source, perChannel);
+            }
+        }
+    }
+
+    // * Other sources in the network
+    private static void drawUnselectedSource(
+            final Level level,
+            final BlockPos source,
+            final Map<String, Set<CableNetworkSink>> perChannel
+    ) {
+        final int color = LineColor.SOURCE.SAME_NETWORK.getColor();
+        if (!(level.getBlockState(source).getBlock() instanceof SubTargetCableEndpoint)) {
+            drawOutline(level, source, color);
+            return;
+        }
+
+        final Set<String> drawn = new HashSet<>();
+        for (final String channel : perChannel.keySet()) {
+            final String module = subTargetForChannel(level, source, channel);
+            if (module != null && drawn.add(module)) {
+                drawModuleOutline(level, source, module, "cableNetworkSource", color);
+            }
+        }
+
+        if (drawn.isEmpty()) {
+            drawOutline(level, source, color);
+        }
+    }
+    //#endregion
+
+    // * Highlight whichever endpoint the source actually is
+    private static void drawSourceOutline(
+            final Level level,
+            final BlockPos pos,
+            @Nullable final String subTarget,
+            final int color
+    ) {
+        if (subTarget == null) {
+            drawOutline(level, pos, color);
+            return;
+        }
+        drawModuleOutline(level, pos, subTarget, "cableSourceModule", color);
+    }
+
+    private static void drawConnection(
+            final Level level,
+            final BlockPos start,
+            final CableNetworkSink sink,
+            final String channel,
+            final int faceColor,
+            final int cableColor
+    ) {
+        final BlockPos end = sink.blockPos();
+        final Vec3 lineStart = anchorOf(level, start, selectedSourceModule);
+        final Vec3 lineEnd;
+
+        if (sink.isModule()) {
+            final String module = subTargetForChannel(level, end, sink.sinkChannel());
+            final String outlineTarget = module == null ? sink.sinkChannel() : module;
+            drawModuleOutline(level, end, outlineTarget, "cableSinkModule:" + channel, faceColor);
+            lineEnd = anchorOf(level, end, module);
+        } else {
+            drawOutlineFace(end, sink.facing(), channel, faceColor);
+            lineEnd = Vec3.atCenterOf(end).add(Vec3.atLowerCornerOf(sink.facing().getNormal()).scale(0.5D));
+        }
+
+        Outliner.getInstance()
+                .showLine(
+                        net.createmod.catnip.data.Pair.of(
+                                "cableConnection",
+                                net.createmod.catnip.data.Pair.of(
+                                        net.createmod.catnip.data.Pair.of(start, end),
+                                        net.createmod.catnip.data.Pair.of(sink.sinkChannel() + "|" + sink.direction(), channel)
+                                )
+                        ),
+                        lineStart,
+                        lineEnd
+                )
+                .colored(cableColor);
+    }
+
+    private static void drawOutlineFace(final BlockPos pos, final Direction direction, final String channel, final int color) {
+        Outliner.getInstance()
+                .showAABB(net.createmod.catnip.data.Pair.of("cableFace", net.createmod.catnip.data.Pair.of(BlockFace.of(pos, direction), channel)), FaceOutlines.getOutline(direction).move(pos))
+                .colored(color)
+                .lineWidth(OUTLINE_LINE_WIDTH);
+    }
+
+    // * Catnip only knows how to draw axis aligned boxes
+    private static void drawModuleOutline(
+            final Level level,
+            final BlockPos pos,
+            final String subTarget,
+            final String slotTag,
+            final int color
+    ) {
+        final List<CableOutlineBox> boxes = subTargetOutline(level, pos, subTarget);
+        if (boxes.isEmpty()) {
+            drawOutline(level, pos, color);
+            return;
+        }
+
+        moduleOutlines.computeIfAbsent(pos.immutable(), ignored -> new LinkedHashMap<>()).put(subTarget, color);
+    }
+
+    public static Map<String, Integer> moduleOutlinesFor(final BlockPos pos) {
+        return moduleOutlines.getOrDefault(pos, Map.of());
+    }
+
+    public static void renderLocalBox(
+            final AABB box,
+            final PoseStack poseStack,
+            final VertexConsumer buffer,
+            final int color,
+            final double thickness
+    ) {
+        final float red = ((color >> 16) & 0xFF) / 255.0F;
+        final float green = ((color >> 8) & 0xFF) / 255.0F;
+        final float blue = (color & 0xFF) / 255.0F;
+        final double half = thickness / 2.0D;
+        final PoseStack.Pose pose = poseStack.last();
+
+        final double[] xs = {box.minX, box.maxX};
+        final double[] ys = {box.minY, box.maxY};
+        final double[] zs = {box.minZ, box.maxZ};
+
+        // * Four bars along each axis, twelve edges in total
+        for (final double y : ys) {
+            for (final double z : zs) {
+                bar(pose, buffer, new AABB(box.minX - half, y - half, z - half, box.maxX + half, y + half, z + half), red, green, blue);
+            }
+        }
+        for (final double x : xs) {
+            for (final double z : zs) {
+                bar(pose, buffer, new AABB(x - half, box.minY - half, z - half, x + half, box.maxY + half, z + half), red, green, blue);
+            }
+        }
+        for (final double x : xs) {
+            for (final double y : ys) {
+                bar(pose, buffer, new AABB(x - half, y - half, box.minZ - half, x + half, y + half, box.maxZ + half), red, green, blue);
+            }
+        }
+    }
+
+    // * Six faces of one bar
+    private static void bar(
+            final PoseStack.Pose pose,
+            final VertexConsumer buffer,
+            final AABB b,
+            final float red,
+            final float green,
+            final float blue
+    ) {
+        quad(pose, buffer, red, green, blue,
+                b.minX, b.minY, b.minZ, b.minX, b.maxY, b.minZ, b.maxX, b.maxY, b.minZ, b.maxX, b.minY, b.minZ);
+        quad(pose, buffer, red, green, blue,
+                b.maxX, b.minY, b.maxZ, b.maxX, b.maxY, b.maxZ, b.minX, b.maxY, b.maxZ, b.minX, b.minY, b.maxZ);
+        quad(pose, buffer, red, green, blue,
+                b.minX, b.minY, b.maxZ, b.minX, b.maxY, b.maxZ, b.minX, b.maxY, b.minZ, b.minX, b.minY, b.minZ);
+        quad(pose, buffer, red, green, blue,
+                b.maxX, b.minY, b.minZ, b.maxX, b.maxY, b.minZ, b.maxX, b.maxY, b.maxZ, b.maxX, b.minY, b.maxZ);
+        quad(pose, buffer, red, green, blue,
+                b.minX, b.maxY, b.minZ, b.minX, b.maxY, b.maxZ, b.maxX, b.maxY, b.maxZ, b.maxX, b.maxY, b.minZ);
+        quad(pose, buffer, red, green, blue,
+                b.minX, b.minY, b.maxZ, b.minX, b.minY, b.minZ, b.maxX, b.minY, b.minZ, b.maxX, b.minY, b.maxZ);
+    }
+
+    private static void quad(
+            final PoseStack.Pose pose,
+            final VertexConsumer buffer,
+            final float red,
+            final float green,
+            final float blue,
+            final double x1, final double y1, final double z1,
+            final double x2, final double y2, final double z2,
+            final double x3, final double y3, final double z3,
+            final double x4, final double y4, final double z4
+    ) {
+        buffer.addVertex(pose, (float) x1, (float) y1, (float) z1).setColor(red, green, blue, 1.0F);
+        buffer.addVertex(pose, (float) x2, (float) y2, (float) z2).setColor(red, green, blue, 1.0F);
+        buffer.addVertex(pose, (float) x3, (float) y3, (float) z3).setColor(red, green, blue, 1.0F);
+        buffer.addVertex(pose, (float) x4, (float) y4, (float) z4).setColor(red, green, blue, 1.0F);
+    }
+
+
+    // * Uses approximate bounding box
+    private static void drawOutline(final Level level, final BlockPos pos, final int color) {
+        final BlockState state = level.getBlockState(pos);
+        final AABB box = state.getShape(level, pos).isEmpty() ? UNIT_CUBE : state.getShape(level, pos).bounds();
+        Outliner.getInstance()
+                .showAABB(net.createmod.catnip.data.Pair.of("cableBlock", pos), box.move(pos))
+                .colored(color)
+                .lineWidth(OUTLINE_LINE_WIDTH);
+    }
+
+
+
+    private static void notifyPlayer(final Player player, final String message) {
+        player.displayClientMessage(Component.literal(message), true);
+    }
+
+    private static int countConnections(final Map<Long, Map<String, Set<CableNetworkSink>>> network) {
+        int count = 0;
+        for (final Map<String, Set<CableNetworkSink>> perChannel : network.values()) {
+            for (final Set<CableNetworkSink> sinks : perChannel.values()) {
+                count += sinks.size();
+            }
+        }
+        return count;
+    }
+
+    // --- COLORS FOR EACH OUTLINE STATE --- //
+    private interface LineColor {
+        int getColor();
+
+        enum SINK implements LineColor {
+            SELECTED(Mode.DEPOSIT.getColor()),
+            SAME_SOURCE_DIFFERENT_CHANNEL(ChatFormatting.DARK_GRAY.getColor());
+
+            private final int color;
+
+            SINK(final int color) {
+                this.color = color;
+            }
+
+            @Override
+            public int getColor() {
+                return color;
+            }
+        }
+
+        enum SOURCE implements LineColor {
+            SELECTED(Mode.TAKE.getColor()),
+            SAME_NETWORK(0x5773d8);
+
+            private final int color;
+
+            SOURCE(final int color) {
+                this.color = color;
+            }
+
+            @Override
+            public int getColor() {
+                return color;
+            }
+        }
+
+        enum CABLE implements LineColor {
+            SELECTED(Color.RED.getRGB()),
+            SAME_SOURCE_DIFFERENT_CHANNEL(ChatFormatting.DARK_GRAY.getColor());
+
+            private final int color;
+
+            CABLE(final int color) {
+                this.color = color;
+            }
+
+            @Override
+            public int getColor() {
+                return color;
+            }
+        }
+    }
+}

@@ -6,7 +6,7 @@ import dev.ryanhcode.sable.companion.math.BoundingBox3d;
 import dev.ryanhcode.sable.companion.math.Pose3d;
 import dev.ryanhcode.sable.sublevel.SubLevel;
 import edn.lakeopossmc.drivebysable.DriveBySableMod;
-import edn.stratodonut.drivebywire.client.ClientWireNetworkHandler;
+import edn.lakeopossmc.drivebysable.client.ClientCableNetworkHandler;
 import net.minecraft.client.Minecraft;
 import net.minecraft.core.BlockPos;
 import net.minecraft.world.level.Level;
@@ -46,7 +46,7 @@ public abstract class MixinSchematicAndQuillHandler {
         final boolean pressed,
         final CallbackInfoReturnable<Boolean> cir
     ) {
-        ClientWireNetworkHandler.requestSchematicSync("schematic_first_corner");
+        ClientCableNetworkHandler.requestSchematicSync("schematic_first_corner");
     }
 
     @Inject(
@@ -64,7 +64,7 @@ public abstract class MixinSchematicAndQuillHandler {
         final boolean pressed,
         final CallbackInfoReturnable<Boolean> cir
     ) {
-        ClientWireNetworkHandler.requestSchematicSync("schematic_second_corner");
+        ClientCableNetworkHandler.requestSchematicSync("schematic_second_corner");
     }
 
     @Inject(method = "saveSchematic", at = @At("HEAD"))
@@ -73,7 +73,7 @@ public abstract class MixinSchematicAndQuillHandler {
         final boolean convertImmediately,
         final CallbackInfo ci
     ) {
-        ClientWireNetworkHandler.requestSchematicSync("schematic_save:" + name);
+        ClientCableNetworkHandler.requestSchematicSync("schematic_save:" + name);
         logSelectionState(name);
     }
 

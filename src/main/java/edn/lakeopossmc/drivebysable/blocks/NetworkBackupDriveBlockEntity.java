@@ -6,11 +6,11 @@ import dev.ryanhcode.sable.sublevel.SubLevel;
 import edn.lakeopossmc.drivebysable.CableBlockEntities;
 import edn.lakeopossmc.drivebysable.DriveBySableMod;
 import edn.lakeopossmc.drivebysable.cable.CableNetworkManager;
-import edn.stratodonut.drivebywire.blocks.WireNetworkBackupBlockEntity;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.core.HolderLookup;
 import net.minecraft.nbt.CompoundTag;
+import net.minecraft.world.level.block.entity.BlockEntity;
 import net.minecraft.nbt.Tag;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.level.block.HorizontalDirectionalBlock;
@@ -19,8 +19,12 @@ import net.minecraft.world.level.block.state.BlockState;
 // --- BLOCK ENTITY FOR PRESERVER --- //
 // * This block entity stores information for schematics
 // * The entire network is stored (per sublevel)
-// * Extends the compat shim instead of BlockEntity
-public class NetworkBackupDriveBlockEntity extends WireNetworkBackupBlockEntity {
+public class NetworkBackupDriveBlockEntity extends BlockEntity {
+    protected CompoundTag pendingBackupData;
+    protected boolean needsRestore;
+    protected int restoreRetryCooldown;
+    protected int restoreAttempts;
+
     // --- KEY/SYMBOL SETUP --- //
     private static final String CABLE_NETWORK_KEY = "CableNetwork";
     private static final int RESTORE_RETRY_INTERVAL = 20;
