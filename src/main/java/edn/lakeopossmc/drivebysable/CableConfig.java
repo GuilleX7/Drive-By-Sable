@@ -62,7 +62,7 @@ public class CableConfig {
                         "gets this budget on each of them independently."
                 )
                 .translation("drivebysable.config.maxOutputsPerChannel")
-                .defineInRange("maxOutputsPerChannel", 64, 1, 2047);
+                .defineInRange("maxOutputsPerChannel", 64, 0, 2048);
 
         maxSourcesPerSubLevel = builder
                 .comment(
