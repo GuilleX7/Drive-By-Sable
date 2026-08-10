@@ -5,7 +5,6 @@ import com.mojang.blaze3d.vertex.PoseStack;
 import com.mojang.blaze3d.vertex.VertexConsumer;
 import com.simibubi.create.AllBlocks;
 import com.simibubi.create.AllSoundEvents;
-import com.simibubi.create.CreateClient;
 import com.simibubi.create.content.kinetics.mechanicalArm.ArmInteractionPoint.Mode;
 import com.simibubi.create.content.redstone.link.controller.LinkedControllerItem;
 import com.simibubi.create.content.trains.track.TrackBlockOutline;
@@ -299,11 +298,16 @@ public final class ClientCableNetworkHandler {
 
         if (!holdingCableTool) {
             moduleOutlines.clear();
+            CableHoverTip.clear();
             return;
         }
 
+        // * Rebuilt every tick
+        CableHoverTip.clear();
         if (mainHand.is(CableItems.CABLE.get())) {
             showCableHoverTip(minecraft, level, player);
+        } else if (mainHand.is(CableItems.CABLE_CUTTER.get())) {
+            showCableCutterHoverTip(minecraft, level, player);
         }
 
         // * Rebuilt from scratch each tick
@@ -325,7 +329,9 @@ public final class ClientCableNetworkHandler {
                 && minecraft.hitResult.getType() == HitResult.Type.BLOCK) {
             final BlockPos hoverPos = hover.getBlockPos();
             final String hoverModule = pickSubTarget(level, hoverPos, player);
-            if (hoverModule != null && isHoverBlocked(level, hoverPos, player)) {
+            final boolean cutterInHand = mainHand.is(CableItems.CABLE_CUTTER.get());
+            if (hoverModule != null
+                    && drivebysable$hoverInvalid(level, hoverPos, hover.getDirection(), player, cutterInHand)) {
                 drawModuleOutline(level, hoverPos, hoverModule, "cableOutOfRange", OUT_OF_RANGE_COLOR);
             }
         }
@@ -341,7 +347,8 @@ public final class ClientCableNetworkHandler {
             return;
         }
 
-        if (!player.getMainHandItem().is(CableItems.CABLE.get())) {
+        final boolean holdingCutter = player.getMainHandItem().is(CableItems.CABLE_CUTTER.get());
+        if (!player.getMainHandItem().is(CableItems.CABLE.get()) && !holdingCutter) {
             return;
         }
 
@@ -368,7 +375,7 @@ public final class ClientCableNetworkHandler {
         poseStack.pushPose();
         poseStack.translate(pos.getX() - camera.x, pos.getY() - camera.y, pos.getZ() - camera.z);
 
-        if (isHoverBlocked(level, pos, player)) {
+        if (drivebysable$hoverInvalid(level, pos, event.getTarget().getDirection(), player, holdingCutter)) {
             renderShapeEdges(shape, poseStack, event.getMultiBufferSource().getBuffer(RenderType.lines()), OUT_OF_RANGE_COLOR, 0.6F);
         } else {
             TrackBlockOutline.renderShape(shape, poseStack, event.getMultiBufferSource().getBuffer(RenderType.lines()), true);
@@ -396,6 +403,44 @@ public final class ClientCableNetworkHandler {
         // * A full channel refuses every new output
         return CableNetworkManager.wouldExceedSinkLimit(level, selectedSource, currentChannel)
                 && !activeChannelHasSinkAt(pos);
+    }
+
+    // * Which rule applies depends on the tool
+    private static boolean drivebysable$hoverInvalid(
+            final Level level,
+            final BlockPos pos,
+            final Direction face,
+            final Player player,
+            final boolean cutter
+    ) {
+        return cutter
+                ? drivebysable$cutterHoverInvalid(level, pos, face, player)
+                : isHoverBlocked(level, pos, player);
+    }
+
+    // * Mirrors the cutter tip exactly
+    private static boolean drivebysable$cutterHoverInvalid(
+            final Level level,
+            final BlockPos pos,
+            final Direction face,
+            final Player player
+    ) {
+        if (missingRequiredSubTarget(level, pos, player)) {
+            return true;
+        }
+
+        // * Sneak clears the whole target
+        if (player.isShiftKeyDown() || selectedSource == null) {
+            return !hasConnections(pos);
+        }
+
+        // * The source itself stays valid: it is how you leave select mode
+        final String subTarget = pickSubTarget(level, pos, player);
+        if (selectedSource.equals(pos) && Objects.equals(selectedSourceModule, subTarget)) {
+            return false;
+        }
+
+        return !drivebysable$isDisconnectable(level, pos, face, subTarget);
     }
 
     // * Does the active channel already drive something at this position?
@@ -481,8 +526,6 @@ public final class ClientCableNetworkHandler {
     }
 
     //#region // --- SUB TARGET LOOKUPS --- //
-    // * Which module the crosshair is on
-    @Nullable
     // * Blocks made of separately targetable parts accept connections on those parts only
     private static boolean requiresSubTarget(final Level level, final BlockPos pos) {
         return level.getBlockState(pos).getBlock() instanceof SubTargetCableEndpoint;
@@ -493,6 +536,8 @@ public final class ClientCableNetworkHandler {
         return requiresSubTarget(level, pos) && pickSubTarget(level, pos, player) == null;
     }
 
+    // * Which module the crosshair is on, null on bare surface
+    @Nullable
     private static String pickSubTarget(final Level level, final BlockPos pos, final Player player) {
         return level.getBlockState(pos).getBlock() instanceof final SubTargetCableEndpoint endpoint
                 ? endpoint.cable$pickSubTarget(level, pos, player)
@@ -648,7 +693,7 @@ public final class ClientCableNetworkHandler {
             // * Cutter only offers the connected channels
             final List<String> channels = connectedSinkChannels(level, pos, subTarget);
             if (channels.isEmpty()) {
-                showInvalidOperationMessage(player, "drivebysable.invalid_op.no_connections");
+                showInvalidOperationMessage(player, "drivebysable.invalid_op.no_output_connections");
                 return false;
             }
 
@@ -740,7 +785,9 @@ public final class ClientCableNetworkHandler {
             return true;
         }
 
+        // * Cutter reached this point without finding a connection to remove
         if (!allowAdd) {
+            showInvalidOperationMessage(player, "drivebysable.invalid_op.no_output_connections");
             return false;
         }
 
@@ -818,11 +865,12 @@ public final class ClientCableNetworkHandler {
         final HitResult hitResult = minecraft.hitResult;
         final boolean hitBlock = hitResult instanceof BlockHitResult && hitResult.getType() == HitResult.Type.BLOCK;
 
-        // * Says why the bare panel is refused, before the click rather than after
+        // * Says why the bare panel is refused, before the click rather than after.
+        // * Checked ahead of both branches since it applies with or without a source
         if (hitBlock && missingRequiredSubTarget(level, ((BlockHitResult) hitResult).getBlockPos(), player)) {
             tip.add(Component.translatable("drivebysable.cable_actions.module_required")
                     .withStyle(net.minecraft.ChatFormatting.RED));
-            CreateClient.VALUE_SETTINGS_HANDLER.showHoverTip(tip);
+            CableHoverTip.show(tip);
             return;
         }
 
@@ -840,7 +888,7 @@ public final class ClientCableNetworkHandler {
                 tip.add(Component.translatable("drivebysable.cable_actions.enter_setup", Component.keybind("key.use")));
             }
 
-            CreateClient.VALUE_SETTINGS_HANDLER.showHoverTip(tip);
+            CableHoverTip.show(tip);
             return;
         }
 
@@ -848,7 +896,7 @@ public final class ClientCableNetworkHandler {
         if (armedSinkModule != null) {
             tip.add(Component.translatable("drivebysable.cable_actions.select_output_channel"));
             tip.add(Component.translatable("drivebysable.cable_actions.confirm_output", Component.keybind("key.use")));
-            CreateClient.VALUE_SETTINGS_HANDLER.showHoverTip(tip);
+            CableHoverTip.show(tip);
             return;
         }
 
@@ -857,7 +905,7 @@ public final class ClientCableNetworkHandler {
 
         if (hitPos != null && selectedSource.equals(hitPos) && Objects.equals(selectedSourceModule, subTarget)) {
             tip.add(Component.translatable("drivebysable.cable_actions.exit_setup", Component.keybind("key.use")));
-            CreateClient.VALUE_SETTINGS_HANDLER.showHoverTip(tip);
+            CableHoverTip.show(tip);
             return;
         }
 
@@ -868,7 +916,7 @@ public final class ClientCableNetworkHandler {
                 && (hitPos == null || !activeChannelHasSinkAt(hitPos))) {
             tip.add(Component.translatable("drivebysable.cable_actions.output_limit_reached")
                     .withStyle(net.minecraft.ChatFormatting.RED));
-            CreateClient.VALUE_SETTINGS_HANDLER.showHoverTip(tip);
+            CableHoverTip.show(tip);
             return;
         }
 
@@ -880,7 +928,7 @@ public final class ClientCableNetworkHandler {
                             ? "drivebysable.cable_actions.cross_level"
                             : "drivebysable.cable_actions.out_of_range")
                     .withStyle(net.minecraft.ChatFormatting.RED));
-            CreateClient.VALUE_SETTINGS_HANDLER.showHoverTip(tip);
+            CableHoverTip.show(tip);
             return;
         }
 
@@ -898,9 +946,135 @@ public final class ClientCableNetworkHandler {
             ));
         }
 
-        CreateClient.VALUE_SETTINGS_HANDLER.showHoverTip(tip);
+        CableHoverTip.show(tip);
     }
     //#endregion
+
+    // * Cutter equivalent of the cable tip
+    private static void showCableCutterHoverTip(final Minecraft minecraft, final Level level, final Player player) {
+        final List<MutableComponent> tip = new ArrayList<>();
+        tip.add(Component.translatable("drivebysable.cable_cutter_actions.header"));
+
+        final HitResult hitResult = minecraft.hitResult;
+        final boolean hitBlock = hitResult instanceof BlockHitResult && hitResult.getType() == HitResult.Type.BLOCK;
+        final BlockPos hitPos = hitBlock ? ((BlockHitResult) hitResult).getBlockPos() : null;
+        final Direction hitFace = hitBlock ? ((BlockHitResult) hitResult).getDirection() : Direction.UP;
+        // * Aiming at nothing says nothing
+        if (hitPos == null) {
+            return;
+        }
+
+        final String subTarget = pickSubTarget(level, hitPos, player);
+
+        //#region // --- SNEAKING --- //
+        // * Sneak plus use clears everything on the target
+        if (player.isShiftKeyDown()) {
+            if (missingRequiredSubTarget(level, hitPos, player)) {
+                drivebysable$refuse(tip, "drivebysable.cable_actions.module_required");
+                return;
+            }
+
+            if (!hasConnections(hitPos)) {
+                drivebysable$refuse(tip, "drivebysable.cable_cutter_actions.invalid_source");
+                return;
+            }
+
+            // * Sneak is already held, so it is shown as satisfied
+            tip.add(Component.translatable("drivebysable.cable_cutter_actions.disconnect_all", drivebysable$sneakUse(true)));
+            CableHoverTip.show(tip);
+            return;
+        }
+        //#endregion
+
+        //#region // --- BEFORE A SOURCE IS PICKED --- //
+        if (selectedSource == null) {
+            // * A panel is only addressable by module, so say that
+            if (hitPos != null && missingRequiredSubTarget(level, hitPos, player)) {
+                drivebysable$refuse(tip, "drivebysable.cable_actions.module_required");
+                return;
+            }
+
+            if (!hasConnections(hitPos)) {
+                drivebysable$refuse(tip, "drivebysable.cable_cutter_actions.invalid_source");
+                return;
+            }
+
+            tip.add(Component.translatable("drivebysable.cable_cutter_actions.enter_select", Component.keybind("key.use")));
+            tip.add(Component.translatable("drivebysable.cable_cutter_actions.disconnect_all", drivebysable$sneakUse(false)));
+            CableHoverTip.show(tip);
+            return;
+        }
+        //#endregion
+
+        // * An armed output owns scroll until a second click disconnects it
+        if (armedSinkModule != null) {
+            tip.add(Component.translatable("drivebysable.cable_actions.select_output_channel"));
+            tip.add(Component.translatable("drivebysable.cable_cutter_actions.disconnect_output", Component.keybind("key.use")));
+            CableHoverTip.show(tip);
+            return;
+        }
+
+        // * Back on the source itself
+        if (hitPos != null && selectedSource.equals(hitPos) && Objects.equals(selectedSourceModule, subTarget)) {
+            tip.add(Component.translatable("drivebysable.cable_cutter_actions.exit_select", Component.keybind("key.use")));
+            tip.add(Component.translatable("drivebysable.cable_cutter_actions.disconnect_all", drivebysable$sneakUse(false)));
+            CableHoverTip.show(tip);
+            return;
+        }
+
+        //#region // --- CHOOSING AN OUTPUT TO CUT --- //
+        if (hitPos != null && missingRequiredSubTarget(level, hitPos, player)) {
+            drivebysable$refuse(tip, "drivebysable.cable_actions.module_required");
+            return;
+        }
+
+        // * Scrolling stays useful either way
+        tip.add(Component.translatable("drivebysable.cable_actions.select_channel"));
+
+        if (!drivebysable$isDisconnectable(level, hitPos, hitFace, subTarget)) {
+            drivebysable$refuse(tip, "drivebysable.cable_cutter_actions.invalid_output");
+            return;
+        }
+
+        tip.add(Component.translatable("drivebysable.cable_cutter_actions.disconnect_output", Component.keybind("key.use")));
+        CableHoverTip.show(tip);
+        //#endregion
+    }
+
+    // * Is there something here the cutter could actually remove right now?
+    private static boolean drivebysable$isDisconnectable(
+            final Level level,
+            final BlockPos pos,
+            final Direction face,
+            @Nullable final String subTarget
+    ) {
+        if (subTarget != null) {
+            return !connectedSinkChannels(level, pos, subTarget).isEmpty();
+        }
+
+        return currentNetwork
+                .getOrDefault(selectedSource.asLong(), Map.of())
+                .getOrDefault(currentChannel, Set.of())
+                .contains(CableNetworkSink.of(pos, face, CableNetworkSink.BLOCK_FACE));
+    }
+
+    // * Closes the tip on a red reason line
+    private static void drivebysable$refuse(final List<MutableComponent> tip, final String langKey) {
+        tip.add(Component.translatable(langKey).withStyle(ChatFormatting.RED));
+        CableHoverTip.show(tip);
+    }
+
+    // * Sneak plus use, built from the real keybinds
+    private static MutableComponent drivebysable$sneakUse(final boolean sneakHeld) {
+        final MutableComponent sneak = Component.keybind("key.sneak");
+        if (sneakHeld) {
+            sneak.withStyle(ChatFormatting.GREEN);
+        }
+
+        return sneak
+                .append(Component.literal(" + ").withStyle(ChatFormatting.RESET))
+                .append(Component.keybind("key.use"));
+    }
 
     private static void syncManager() {
         PacketDistributor.sendToServer(CableNetworkRequestSyncPacket.INSTANCE);

@@ -28,7 +28,8 @@
     "client.MixinLinkedControllerClientHandlerAccessor",
     "client.MixinTweakedLinkedControllerClientHandlerAccessor",
     "client.MixinSchematicAndQuillHandler",
-    "compat.dashpanels.MixinAbstractPanelRenderer"
+    "compat.dashpanels.MixinAbstractPanelRenderer",
+    "client.MixinValueSettingsClient"
   ],
   "injectors": {
     "defaultRequire": 1
