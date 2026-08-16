@@ -31,7 +31,11 @@ public class CableItem extends Item {
     // * Glint while a source is selected
     @Override
     public boolean isFoil(final ItemStack stack) {
-        return FMLLoader.getDist() == Dist.CLIENT && ClientCableNetworkHandler.isInSetupMode();
+        if (FMLLoader.getDist() != Dist.CLIENT) return false;
+        if (!ClientCableNetworkHandler.isInSetupMode()) return false;
+        final net.minecraft.client.Minecraft mc = net.minecraft.client.Minecraft.getInstance();
+        if (mc.player == null) return false;
+        return mc.player.getMainHandItem() == stack || mc.player.getOffhandItem() == stack;
     }
 
     @Override
