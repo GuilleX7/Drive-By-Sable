@@ -5,12 +5,9 @@ import edn.lakeopossmc.drivebysable.compat.LinkedControllerCableServerHandler;
 import edn.lakeopossmc.drivebysable.compat.TweakedControllerCableServerHandler;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
-import net.minecraft.server.MinecraftServer;
-import net.minecraft.server.TickTask;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.level.Level;
-import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.state.BlockState;
 import net.neoforged.bus.api.SubscribeEvent;
 import net.neoforged.neoforge.event.level.BlockEvent;
@@ -91,23 +88,8 @@ public final class CableCommonEvents {
         }
 
         final ServerPlayer player = event.getPlayer() instanceof final ServerPlayer serverPlayer ? serverPlayer : null;
-        final Block brokenBlock = event.getState().getBlock();
-        final MinecraftServer server = level.getServer();
 
-        if (server == null) {
-            CableNetworkManager.get(level).removeAllFromSourceInternal(player, level, pos);
-            return;
-        }
-
-        server.tell(new TickTask(server.getTickCount() + 1, () -> {
-            // * Break was intercepted, nothing to disconnect
-            if (level.getBlockState(pos).is(brokenBlock)) {
-                return;
-            }
-            if (CableNetworkManager.isPendingAssembly(level, pos)) {
-                return;
-            }
-            CableNetworkManager.get(level).removeAllFromSourceInternal(player, level, pos);
-        }));
+        // * Run immediately so the player refund fires before onRemove
+        CableNetworkManager.get(level).removeAllFromSourceInternal(player, level, pos);
     }
 }
