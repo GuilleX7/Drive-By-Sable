@@ -1328,6 +1328,9 @@ public final class CableNetworkManager {
             getOrCreateSinksOnChannel(BlockPos.of(sourceKey), channel).add(sink);
             addSinkReference(sourceKey, channel, sink);
         }
+
+        // * Schedule a full signal rebroadcast on the first tick after load
+        graphDirty = true;
     }
 
     //#endregion
