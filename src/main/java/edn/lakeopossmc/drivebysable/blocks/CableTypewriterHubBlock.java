@@ -91,6 +91,10 @@ public class CableTypewriterHubBlock extends HorizontalDirectionalBlock
                                               final Level level, final BlockPos pos,
                                               final Player player, final InteractionHand hand,
                                               final BlockHitResult hit) {
+        // * Let the wrench reach IWrenchable.onSneakWrenched via WrenchItem.useOn
+        if (AllItems.WRENCH.isIn(stack)) {
+            return ItemInteractionResult.PASS_TO_DEFAULT_BLOCK_INTERACTION;
+        }
         final ItemStack held = player.getItemInHand(hand);
         final Item linkedController = AllItems.LINKED_CONTROLLER.asItem();
 

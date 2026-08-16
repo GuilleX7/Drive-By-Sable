@@ -126,7 +126,11 @@ public class CableTypewriterHubBlockEntity extends LinkedTypewriterBlockEntity {
             CableTypewriterHubServerHandler.KEY_TO_CHANNEL.values().forEach(channel ->
                     CableNetworkManager.trySetSignalAt(level, this.getBlockPos(), channel, 0));
         }
-        super.disconnectUser();
+        try {
+            super.disconnectUser();
+        } catch (final NullPointerException ignored) {
+            // * No user was connected — nothing to disconnect
+        }
     }
 
     // * Sync connected channels to client only, not saved to disk
