@@ -7,9 +7,11 @@ import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.network.chat.Component;
 import net.minecraft.network.chat.MutableComponent;
 import net.minecraft.network.chat.Style;
+import net.minecraft.world.InteractionResult;
 import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.TooltipFlag;
+import net.minecraft.world.item.context.UseOnContext;
 import net.neoforged.api.distmarker.Dist;
 import net.neoforged.fml.loading.FMLLoader;
 
@@ -26,6 +28,11 @@ public class CableItem extends Item {
 
     public CableItem(final Properties properties) {
         super(properties);
+    }
+
+    @Override
+    public InteractionResult useOn(final UseOnContext context) {
+        return InteractionResult.sidedSuccess(context.getLevel().isClientSide());
     }
 
     // * Glint while a source is selected
