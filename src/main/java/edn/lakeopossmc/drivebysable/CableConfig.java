@@ -53,7 +53,7 @@ public class CableConfig {
                         "enforceRangeLimit is false."
                 )
                 .translation("drivebysable.config.rangeLimit")
-                .defineInRange("rangeLimit", 32, 0, 256);
+                .defineInRange("rangeLimit", 512, 0, 512);
 
         maxOutputsPerChannel = builder
                 .comment(
