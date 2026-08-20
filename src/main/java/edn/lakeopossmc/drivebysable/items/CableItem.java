@@ -35,6 +35,11 @@ public class CableItem extends Item {
         return InteractionResult.sidedSuccess(context.getLevel().isClientSide());
     }
 
+    @Override
+    public InteractionResult onItemUseFirst(final ItemStack stack, final UseOnContext context) {
+        return InteractionResult.sidedSuccess(context.getLevel().isClientSide());
+    }
+
     // * Glint while a source is selected
     @Override
     public boolean isFoil(final ItemStack stack) {

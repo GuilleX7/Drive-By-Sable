@@ -14,6 +14,12 @@ public final class CablePackets {
                 .playToServer(CableAddConnectionPacket.TYPE, CableAddConnectionPacket.STREAM_CODEC, CableAddConnectionPacket::handle)
                 .playToServer(CableRemoveConnectionPacket.TYPE, CableRemoveConnectionPacket.STREAM_CODEC, CableRemoveConnectionPacket::handle)
                 .playToServer(CableNetworkRequestSyncPacket.TYPE, CableNetworkRequestSyncPacket.STREAM_CODEC, CableNetworkRequestSyncPacket::handle)
+                .playToServer(BackupDriveSavePacket.TYPE, BackupDriveSavePacket.STREAM_CODEC, BackupDriveSavePacket::handle)
+                .playToServer(BackupDriveRegionPacket.TYPE, BackupDriveRegionPacket.STREAM_CODEC, BackupDriveRegionPacket::handle)
+                .playToServer(BackupDriveResetPacket.TYPE, BackupDriveResetPacket.STREAM_CODEC, BackupDriveResetPacket::handle)
+                .playToServer(BackupDriveLoadPacket.TYPE, BackupDriveLoadPacket.STREAM_CODEC, BackupDriveLoadPacket::handle)
+                .playToClient(BackupDriveLoadReportPacket.TYPE, BackupDriveLoadReportPacket.STREAM_CODEC, BackupDriveLoadReportPacket::handle)
+                .playToClient(BackupDriveHighlightPacket.TYPE, BackupDriveHighlightPacket.STREAM_CODEC, BackupDriveHighlightPacket::handle)
                 .playToServer(CableTypewriterHubKeyPacket.TYPE, CableTypewriterHubKeyPacket.STREAM_CODEC, CableTypewriterHubKeyPacket::handle)
                 .playToServer(MovementKeybindsPacket.TYPE, MovementKeybindsPacket.STREAM_CODEC, MovementKeybindsPacket::handle)
                 .playToServer(TweakedKeybindsPacket.TYPE, TweakedKeybindsPacket.STREAM_CODEC, TweakedKeybindsPacket::handle);

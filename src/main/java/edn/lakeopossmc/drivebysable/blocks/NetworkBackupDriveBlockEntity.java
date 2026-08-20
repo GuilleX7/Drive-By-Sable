@@ -1,13 +1,14 @@
 package edn.lakeopossmc.drivebysable.blocks;
 
-import dev.ryanhcode.sable.Sable;
+import com.simibubi.create.api.schematic.nbt.PartialSafeNBT;
 import dev.ryanhcode.sable.api.schematic.SubLevelSchematicSerializationContext;
-import dev.ryanhcode.sable.sublevel.SubLevel;
 import edn.lakeopossmc.drivebysable.CableBlockEntities;
 import edn.lakeopossmc.drivebysable.DriveBySableMod;
 import edn.lakeopossmc.drivebysable.cable.CableNetworkManager;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
+
+import javax.annotation.Nullable;
 import net.minecraft.core.HolderLookup;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.world.level.block.entity.BlockEntity;
@@ -15,18 +16,49 @@ import net.minecraft.nbt.Tag;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.level.block.HorizontalDirectionalBlock;
 import net.minecraft.world.level.block.state.BlockState;
+import net.minecraft.core.component.DataComponents;
+import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.item.component.CustomData;
+import net.minecraft.network.Connection;
+import net.minecraft.network.protocol.Packet;
+import net.minecraft.network.protocol.game.ClientGamePacketListener;
+import net.minecraft.network.protocol.game.ClientboundBlockEntityDataPacket;
+import net.minecraft.world.level.block.Block;
+import com.simibubi.create.api.equipment.goggles.IHaveGoggleInformation;
+import edn.lakeopossmc.drivebysable.CableConfig;
+import edn.lakeopossmc.drivebysable.client.BackupDriveGoggleClient;
+import net.minecraft.ChatFormatting;
+import net.minecraft.network.chat.Component;
+import java.util.List;
+import net.createmod.catnip.lang.LangBuilder;
 
 // --- BLOCK ENTITY FOR PRESERVER --- //
 // * This block entity stores information for schematics
-// * The entire network is stored (per sublevel)
-public class NetworkBackupDriveBlockEntity extends BlockEntity {
-    protected CompoundTag pendingBackupData;
-    protected boolean needsRestore;
-    protected int restoreRetryCooldown;
-    protected int restoreAttempts;
+public class NetworkBackupDriveBlockEntity extends BlockEntity implements PartialSafeNBT, IHaveGoggleInformation {
+
+    // * The region capture the player confirmed in the screen
+    @Nullable
+    private CompoundTag boundedSnapshot;
+
+
+    // * The region the player set up in the screen
+    private BlockPos regionOffset = BlockPos.ZERO;
+    private BlockPos regionSize = DEFAULT_REGION_SIZE;
+    private int regionRotation;
 
     // --- KEY/SYMBOL SETUP --- //
     private static final String CABLE_NETWORK_KEY = "CableNetwork";
+    private static final String BOUNDED_SNAPSHOT_KEY = "BoundedSnapshot";
+
+    private static final String GOGGLES = "goggles.";
+
+    // * Matches CableNetworkManager
+    private static final String CONNECTIONS_TAG = "Connections";
+    private static final String REGION_OFFSET_KEY = "RegionOffset";
+    private static final String REGION_SIZE_KEY = "RegionSize";
+    private static final String REGION_ROTATION_KEY = "RegionRotation";
+
+    private static final BlockPos DEFAULT_REGION_SIZE = new BlockPos(1, 1, 1);
     private static final int RESTORE_RETRY_INTERVAL = 20;
 
     // --- GET POS AND STATE --- //
@@ -35,172 +67,252 @@ public class NetworkBackupDriveBlockEntity extends BlockEntity {
     }
 
     //#region // --- HANDLE CONNECTION SAVES IN SCHEMATICS --- //
-    // * Reuse loaded snapshot if placing, else build fresh from live network
     @Override
     protected void saveAdditional(final CompoundTag tag, final HolderLookup.Provider registries) {
         super.saveAdditional(tag, registries);
-        if (this.level == null) {
-            return;
-        }
 
         final SubLevelSchematicSerializationContext context = SubLevelSchematicSerializationContext.getCurrentContext();
-        final SubLevel subLevel = Sable.HELPER.getContaining(this.level, this.worldPosition);
-        final boolean reusingLoadedSnapshot = context != null
-                && context.getType() == SubLevelSchematicSerializationContext.Type.PLACE
-                && this.pendingBackupData != null
-                && !this.pendingBackupData.isEmpty();
-        final CableNetworkManager.BackupSnapshot liveSnapshot = reusingLoadedSnapshot
-                ? null
-                : CableNetworkManager.get(this.level).createBackupSnapshot(this.level, this.worldPosition, this.getFacing());
-        CompoundTag dataToWrite = reusingLoadedSnapshot ? this.pendingBackupData.copy() : liveSnapshot.data();
-        if (context != null && context.getType() == SubLevelSchematicSerializationContext.Type.PLACE) {
-            dataToWrite = CableNetworkManager.transformBackupSnapshotForPlacement(
-                    dataToWrite,
-                    this.worldPosition,
-                    context
-            );
-            DriveBySableMod.LOGGER.info(
-                    "[schematic-debug] Applied placement transform to backup snapshot at {} during PLACE serialization.",
-                    this.worldPosition
-            );
-        }
 
-        final int internalConnections = reusingLoadedSnapshot
-                ? CableNetworkManager.countConnectionsInBackupSnapshot(dataToWrite)
-                : liveSnapshot.internalConnections();
-        final int skippedConnections = reusingLoadedSnapshot
-                ? CableNetworkManager.countUnsupportedConnectionsInBackupSnapshot(dataToWrite)
-                : liveSnapshot.skippedConnections();
-
-        if (!dataToWrite.isEmpty()) {
-            tag.put(CABLE_NETWORK_KEY, dataToWrite);
-        }
-
-        if (this.level.isClientSide() || context != null) {
-            DriveBySableMod.LOGGER.info(
-                    "[schematic-debug] Serializing backup block at {} on {} (context={}, sublevel={}, reuseLoaded={}, snapshotVersion={}, ownerSnapshot={}, placementResolved={}) -> {} internal / {} skipped / wroteData={}.",
-                    this.worldPosition,
-                    this.level.isClientSide() ? "client" : "server",
-                    context == null ? "none" : context.getType(),
-                    subLevel == null ? "none" : subLevel.getUniqueId(),
-                    reusingLoadedSnapshot,
-                    dataToWrite.getInt("SnapshotVersion"),
-                    CableNetworkManager.isSubLevelOwnedBackupSnapshot(dataToWrite),
-                    dataToWrite.getBoolean("PlacementResolved"),
-                    internalConnections,
-                    skippedConnections,
-                    !dataToWrite.isEmpty()
-            );
-        }
-
-        if (context != null
-                && context.getType() == SubLevelSchematicSerializationContext.Type.SAVE
-                && skippedConnections > 0) {
-            DriveBySableMod.LOGGER.warn(
-                    "Backup block at {} skipped {} unsupported cable connections while saving schematic; only links whose endpoints stay inside the same blueprint batch are preserved.",
-                    this.worldPosition,
-                    skippedConnections
-            );
-        }
+        writeRegionData(tag, context);
     }
     //#endregion
 
-    // * Stash payload, actual restore happens on tick
+    // * Region settings
     @Override
     protected void loadAdditional(final CompoundTag tag, final HolderLookup.Provider registries) {
         super.loadAdditional(tag, registries);
-        if (tag.contains(CABLE_NETWORK_KEY, Tag.TAG_COMPOUND)) {
-            this.pendingBackupData = tag.getCompound(CABLE_NETWORK_KEY).copy();
-            this.needsRestore = true;
-            this.restoreRetryCooldown = 0;
-            this.restoreAttempts = 0;
-            DriveBySableMod.LOGGER.info(
-                    "[schematic-debug] Loaded backup payload for {} on {} with {} tag entries / {} stored connections (snapshotVersion={}, ownerSnapshot={}, placementResolved={}).",
-                    this.worldPosition,
-                    this.level == null ? "unknown-level" : this.level.isClientSide() ? "client" : "server",
-                    this.pendingBackupData.size(),
-                    CableNetworkManager.countConnectionsInBackupSnapshot(this.pendingBackupData),
-                    this.pendingBackupData.getInt("SnapshotVersion"),
-                    CableNetworkManager.isSubLevelOwnedBackupSnapshot(this.pendingBackupData),
-                    this.pendingBackupData.getBoolean("PlacementResolved")
-            );
+        readRegionData(tag);
+
+
+
+        // * Absent on drive placed before this existed, so fall back to defaults
+        this.regionOffset = tag.contains(REGION_OFFSET_KEY)
+                ? BlockPos.of(tag.getLong(REGION_OFFSET_KEY))
+                : BlockPos.ZERO;
+        this.regionSize = tag.contains(REGION_SIZE_KEY)
+                ? BlockPos.of(tag.getLong(REGION_SIZE_KEY))
+                : DEFAULT_REGION_SIZE;
+        this.regionRotation = tag.getInt(REGION_ROTATION_KEY);
+
+        //#region // --- LEGACY PAYLOAD BECOMES SAVE --- //
+        if (this.boundedSnapshot == null && tag.contains(CABLE_NETWORK_KEY, Tag.TAG_COMPOUND)) {
+            final CompoundTag legacy = tag.getCompound(CABLE_NETWORK_KEY).copy();
+
+            if (!legacy.isEmpty() && CableNetworkManager.countConnectionsInBackupSnapshot(legacy) > 0) {
+                this.boundedSnapshot = legacy;
+
+                DriveBySableMod.LOGGER.info(
+                        "[schematic-debug] Adopted a legacy payload at {} as saved data: {} connections.",
+                        this.worldPosition,
+                        CableNetworkManager.countConnectionsInBackupSnapshot(legacy)
+                );
+            }
+        }
+        //#endregion
+    }
+
+
+    // * The player's region and whatever they saved into it
+    private void readRegionData(final CompoundTag tag) {
+        if (tag == null) {
+            return;
+        }
+
+        this.boundedSnapshot = tag.contains(BOUNDED_SNAPSHOT_KEY, Tag.TAG_COMPOUND)
+                ? tag.getCompound(BOUNDED_SNAPSHOT_KEY).copy()
+                : null;
+
+        if (tag.contains(REGION_OFFSET_KEY)) {
+            this.regionOffset = BlockPos.of(tag.getLong(REGION_OFFSET_KEY));
+        }
+        if (tag.contains(REGION_SIZE_KEY)) {
+            this.regionSize = BlockPos.of(tag.getLong(REGION_SIZE_KEY));
+        }
+        this.regionRotation = Math.floorMod(tag.getInt(REGION_ROTATION_KEY), 4);
+    }
+
+    private void writeRegionData(final CompoundTag tag, final SubLevelSchematicSerializationContext context) {
+        tag.putLong(REGION_OFFSET_KEY, this.regionOffset.asLong());
+        tag.putLong(REGION_SIZE_KEY, this.regionSize.asLong());
+        tag.putInt(REGION_ROTATION_KEY, this.regionRotation);
+
+        final boolean placing = context != null
+                && context.getType() == SubLevelSchematicSerializationContext.Type.PLACE;
+        final CompoundTag boundedToWrite;
+
+        if (this.boundedSnapshot == null) {
+            boundedToWrite = new CompoundTag();
+        } else if (placing) {
+            boundedToWrite = CableNetworkManager.transformBackupSnapshotForPlacement(
+                    this.boundedSnapshot.copy(), this.worldPosition, context);
         } else {
-            this.pendingBackupData = null;
-            this.needsRestore = false;
-            this.restoreRetryCooldown = 0;
-            this.restoreAttempts = 0;
+            boundedToWrite = this.boundedSnapshot.copy();
+        }
+
+        if (!boundedToWrite.isEmpty()) {
+            tag.put(BOUNDED_SNAPSHOT_KEY, boundedToWrite);
+        }
+
+    }
+
+    //#region // --- GOGGLE TOOLTIP --- //
+    @Override
+    public boolean addToGoggleTooltip(final List<Component> tooltip, final boolean isPlayerSneaking) {
+        final boolean locked = hasStoredSnapshot();
+
+        lang(GOGGLES + "title")
+                .style(ChatFormatting.WHITE)
+                .add(lang(GOGGLES + (locked ? "locked" : "idle")).style(ChatFormatting.GREEN))
+                .forGoggles(tooltip);
+
+        if (locked) {
+            appendStoredInfo(tooltip);
+            return true;
+        }
+
+        BackupDriveGoggleClient.appendRegionInfo(
+                this.worldPosition,
+                this.regionOffset,
+                this.regionSize,
+                this.regionRotation,
+                tooltip
+        );
+        return true;
+    }
+
+    // * What the drive is holding
+    private void appendStoredInfo(final List<Component> tooltip) {
+        final int sources = CableNetworkManager.countStoredSources(this.boundedSnapshot);
+        final int outputs = CableNetworkManager.countConnectionsInBackupSnapshot(this.boundedSnapshot);
+
+        lang(GOGGLES + "sources", number(sources)).style(ChatFormatting.WHITE).forGoggles(tooltip, 1);
+        lang(GOGGLES + "outputs", number(outputs)).style(ChatFormatting.WHITE).forGoggles(tooltip, 1);
+
+        if (BackupDriveGoggleClient.showsCableCost()) {
+            lang(GOGGLES + "cost", number(outputs)).style(ChatFormatting.WHITE).forGoggles(tooltip, 1);
         }
     }
 
-    //#region // --- RETRY RESTORE UNTIL SUBLEVEL READY --- //
-    public static void serverTick(
-            final Level level,
-            final BlockPos pos,
-            final BlockState state,
-            final NetworkBackupDriveBlockEntity blockEntity
-    ) {
-        if (level.isClientSide() || !blockEntity.needsRestore || blockEntity.pendingBackupData == null) {
+    private static LangBuilder lang(final String key, final Object... args) {
+        return new LangBuilder(DriveBySableMod.MOD_ID).translate(key, args);
+    }
+
+    private static Component number(final int amount) {
+        return Component.literal(String.valueOf(amount)).withStyle(ChatFormatting.AQUA);
+    }
+    //#endregion
+
+    //#region // --- SCHEMATIC SAFE NBT --- //
+    // * For schematicannon so NBT is written to pasted drive
+    @Override
+    public void writeSafe(final CompoundTag tag, final HolderLookup.Provider registries) {
+        writeRegionData(tag, null);
+    }
+    //#endregion
+
+    //#region // --- CLIENT SYNC --- //
+    // * The saved region has to reach the client
+    @Override
+    public CompoundTag getUpdateTag(final HolderLookup.Provider registries) {
+        final CompoundTag tag = new CompoundTag();
+
+        writeRegionData(tag, null);
+        return tag;
+    }
+
+    @Override
+    public Packet<ClientGamePacketListener> getUpdatePacket() {
+        return ClientboundBlockEntityDataPacket.create(this);
+    }
+
+    // * Pushed whenever the saved data changes
+    private void syncToClients() {
+        if (this.level == null || this.level.isClientSide()) {
             return;
         }
 
-        if (blockEntity.restoreRetryCooldown > 0) {
-            blockEntity.restoreRetryCooldown--;
+        this.level.sendBlockUpdated(this.worldPosition, getBlockState(), getBlockState(), Block.UPDATE_CLIENTS);
+    }
+    //#endregion
+
+    //#region // --- BOUNDED SAVE --- //
+    public void writeToItem(final ItemStack stack) {
+        if (this.boundedSnapshot == null) {
             return;
         }
 
-        blockEntity.restoreAttempts++;
-        final CableNetworkManager.RestoreResult restoreResult = CableNetworkManager.get(level)
-                .restoreBackupSnapshot(level, pos, blockEntity.getFacing(), blockEntity.pendingBackupData);
-        if (!restoreResult.attempted()) {
-            DriveBySableMod.LOGGER.info(
-                    "[schematic-debug] Restore attempt {} for backup block at {} is waiting for a containing sublevel. Stored connections={}.",
-                    blockEntity.restoreAttempts,
-                    pos,
-                    CableNetworkManager.countConnectionsInBackupSnapshot(blockEntity.pendingBackupData)
-            );
-            blockEntity.restoreRetryCooldown = RESTORE_RETRY_INTERVAL;
-            return;
+        final CompoundTag tag = new CompoundTag();
+        tag.put(BOUNDED_SNAPSHOT_KEY, this.boundedSnapshot.copy());
+        stack.set(DataComponents.BLOCK_ENTITY_DATA, CustomData.of(tag));
+    }
+
+    // * One cable per stored connection
+    public int getPendingConnectionCount() {
+        if (this.boundedSnapshot == null) {
+            return 0;
+        }
+        if (this.level == null) {
+            return getStoredConnectionCount();
         }
 
-        DriveBySableMod.LOGGER.info(
-                "[schematic-debug] Restore attempt {} for backup block at {} -> expected={}, restored={}, existing={}, deferred={}, skipped={}.",
-                blockEntity.restoreAttempts,
-                pos,
-                restoreResult.expectedConnections(),
-                restoreResult.restoredConnections(),
-                restoreResult.existingConnections(),
-                restoreResult.deferredConnections(),
-                restoreResult.skippedConnections()
-        );
+        return CableNetworkManager.get(this.level)
+                .countPendingConnections(this.level, this.worldPosition, getFacing(), this.boundedSnapshot);
+    }
 
-        if (restoreResult.deferredConnections() > 0) {
-            blockEntity.restoreRetryCooldown = RESTORE_RETRY_INTERVAL;
-            return;
+    public int getStoredConnectionCount() {
+        if (this.boundedSnapshot == null || !this.boundedSnapshot.contains(CONNECTIONS_TAG, Tag.TAG_LIST)) {
+            return 0;
         }
+        return this.boundedSnapshot.getList(CONNECTIONS_TAG, Tag.TAG_COMPOUND).size();
+    }
 
-        if (restoreResult.expectedConnections() > 0
-                && restoreResult.restoredConnections() == 0
-                && restoreResult.existingConnections() == 0) {
-            DriveBySableMod.LOGGER.warn(
-                    "[schematic-debug] Backup block at {} attempted restore but matched 0/{} connections. This usually means the placement transform or endpoint positions do not line up yet.",
-                    pos,
-                    restoreResult.expectedConnections()
-            );
-        }
+    public boolean hasStoredSnapshot() {
+        return this.boundedSnapshot != null;
+    }
 
-        if (restoreResult.skippedConnections() > 0) {
-            DriveBySableMod.LOGGER.warn(
-                    "Backup block at {} did not restore {} unsupported cable connections; cross-sublevel and sublevel-to-world links are intentionally skipped.",
-                    pos,
-                    restoreResult.skippedConnections()
-            );
-        }
+    // * Throws away the save and puts the region back to defaults
+    public void clearStoredSnapshot() {
+        this.boundedSnapshot = null;
+        this.regionOffset = BlockPos.ZERO;
+        this.regionSize = DEFAULT_REGION_SIZE;
+        this.regionRotation = 0;
+        setChanged();
+        syncToClients();
+    }
 
-        blockEntity.pendingBackupData = null;
-        blockEntity.needsRestore = false;
-        blockEntity.restoreRetryCooldown = 0;
-        blockEntity.restoreAttempts = 0;
-        blockEntity.setChanged();
+    public void storeBoundedSnapshot(final CompoundTag snapshot) {
+        this.boundedSnapshot = snapshot.isEmpty() ? null : snapshot.copy();
+        setChanged();
+        syncToClients();
+    }
+
+    @Nullable
+    public CompoundTag getBoundedSnapshot() {
+        return this.boundedSnapshot;
+    }
+
+    public Direction getSavedFacing() {
+        return getFacing();
+    }
+
+    public BlockPos getRegionOffset() {
+        return this.regionOffset;
+    }
+
+    public BlockPos getRegionSize() {
+        return this.regionSize;
+    }
+
+    public int getRegionRotation() {
+        return this.regionRotation;
+    }
+
+    public void setRegion(final BlockPos offset, final BlockPos size, final int rotation) {
+        this.regionOffset = offset.immutable();
+        this.regionSize = size.immutable();
+        this.regionRotation = Math.floorMod(rotation, 4);
+        setChanged();
+        syncToClients();
     }
     //#endregion
 

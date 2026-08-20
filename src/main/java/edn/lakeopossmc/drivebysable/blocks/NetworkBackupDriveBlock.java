@@ -1,7 +1,6 @@
 package edn.lakeopossmc.drivebysable.blocks;
 
 import com.mojang.serialization.MapCodec;
-import edn.lakeopossmc.drivebysable.CableBlockEntities;
 import edn.lakeopossmc.drivebysable.cable.CableNetworkManager;
 import net.minecraft.core.BlockPos;
 import net.minecraft.server.level.ServerLevel;
@@ -9,21 +8,70 @@ import net.minecraft.world.level.Level;
 import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.EntityBlock;
 import net.minecraft.world.level.block.entity.BlockEntity;
-import net.minecraft.world.level.block.entity.BlockEntityTicker;
-import net.minecraft.world.level.block.entity.BlockEntityType;
 import net.minecraft.world.level.block.state.BlockState;
 import org.jetbrains.annotations.Nullable;
+import edn.lakeopossmc.drivebysable.menu.BackupDriveMenu;
+import net.minecraft.server.level.ServerPlayer;
+import net.minecraft.world.InteractionResult;
+import net.minecraft.world.SimpleMenuProvider;
+import net.minecraft.world.entity.player.Player;
+import net.minecraft.world.phys.BlockHitResult;
+import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.level.LevelReader;
+import net.minecraft.world.level.storage.loot.LootParams;
+import net.minecraft.world.level.storage.loot.parameters.LootContextParams;
+import java.util.List;
+import com.simibubi.create.api.schematic.requirement.SpecialBlockItemRequirement;
+import com.simibubi.create.content.schematics.requirement.ItemRequirement;
+import com.simibubi.create.content.schematics.requirement.ItemRequirement.ItemUseType;
+import edn.lakeopossmc.drivebysable.CableItems;
+import java.util.ArrayList;
 
 // --- BLOCK FOR PRESERVING NETWORKS --- //
 // * This class is setup for the physical block
 // * Only information stored here is pos and block entity
-public class NetworkBackupDriveBlock extends Block implements EntityBlock {
+public class NetworkBackupDriveBlock extends Block implements EntityBlock, SpecialBlockItemRequirement {
     // --- DEF CODEC --- //
     public static final MapCodec<NetworkBackupDriveBlock> CODEC = simpleCodec(NetworkBackupDriveBlock::new);
 
     // --- BLOCK PROPS --- //
     public NetworkBackupDriveBlock(final Properties properties) {
         super(properties);
+    }
+
+    // * Right click opens the bounds editor
+    @Override
+    protected InteractionResult useWithoutItem(
+            final BlockState state,
+            final Level level,
+            final BlockPos pos,
+            final Player player,
+            final BlockHitResult hit
+    ) {
+        if (player.isSecondaryUseActive()) {
+            return InteractionResult.PASS;
+        }
+
+        if (level.isClientSide()) {
+            return InteractionResult.SUCCESS;
+        }
+
+        if (!(level.getBlockEntity(pos) instanceof final NetworkBackupDriveBlockEntity drive)
+                || !(player instanceof final ServerPlayer serverPlayer)) {
+            return InteractionResult.PASS;
+        }
+
+        serverPlayer.openMenu(
+                new SimpleMenuProvider(
+                        (containerId, inventory, ignored) -> new BackupDriveMenu(containerId, inventory, pos),
+                        state.getBlock().getName()
+                ),
+                buffer -> {
+                    buffer.writeBlockPos(pos);
+                    BackupDriveMenu.writeRegion(buffer, drive);
+                }
+        );
+        return InteractionResult.CONSUME;
     }
 
     // --- MAPCODEC TO CODEC --- //
@@ -40,22 +88,53 @@ public class NetworkBackupDriveBlock extends Block implements EntityBlock {
 
     // --- MAP BLOCK ENTITY TO CORRECT POS AND LEVEL --- //
     @Override
-    public <T extends BlockEntity> @Nullable BlockEntityTicker<T> getTicker(
-            final Level level,
-            final BlockState state,
-            final BlockEntityType<T> blockEntityType
-    ) {
-        if (level.isClientSide() || blockEntityType != CableBlockEntities.BACKUP_DRIVE.get()) {
-            return null;
+    public ItemRequirement getRequiredItems(final BlockState state, final BlockEntity blockEntity) {
+        final ItemRequirement drive = new ItemRequirement(ItemUseType.CONSUME, asItem());
+        if (!(blockEntity instanceof final NetworkBackupDriveBlockEntity backupDrive)) {
+            return drive;
         }
 
-        return (tickLevel, tickPos, tickState, blockEntity) -> NetworkBackupDriveBlockEntity.serverTick(
-                tickLevel,
-                tickPos,
-                tickState,
-                (NetworkBackupDriveBlockEntity) blockEntity
-        );
+        final int cables = backupDrive.getStoredConnectionCount();
+        if (cables <= 0) {
+            return drive;
+        }
+
+        // * One per stored connection
+        final List<ItemStack> required = new ArrayList<>();
+        required.add(new ItemStack(asItem()));
+        required.add(new ItemStack(CableItems.CABLE.get(), cables));
+        return new ItemRequirement(ItemUseType.CONSUME, required);
     }
+    //#endregion
+
+    //#region // --- SAVED DATA SURVIVES BREAKING --- //
+    @Override
+    protected List<ItemStack> getDrops(final BlockState state, final LootParams.Builder params) {
+        final List<ItemStack> drops = super.getDrops(state, params);
+        if (!(params.getOptionalParameter(LootContextParams.BLOCK_ENTITY)
+                instanceof final NetworkBackupDriveBlockEntity drive) || !drive.hasStoredSnapshot()) {
+            return drops;
+        }
+
+        for (final ItemStack drop : drops) {
+            if (drop.getItem() == asItem()) {
+                drive.writeToItem(drop);
+            }
+        }
+        return drops;
+    }
+
+    // * Middle click on a saved drive
+    @Override
+    public ItemStack getCloneItemStack(final LevelReader level, final BlockPos pos, final BlockState state) {
+        final ItemStack stack = super.getCloneItemStack(level, pos, state);
+        if (level.getBlockEntity(pos) instanceof final NetworkBackupDriveBlockEntity drive
+                && drive.hasStoredSnapshot()) {
+            drive.writeToItem(stack);
+        }
+        return stack;
+    }
+    //#endregion
 
     // * Drop connections when block actually replaced
     @Override

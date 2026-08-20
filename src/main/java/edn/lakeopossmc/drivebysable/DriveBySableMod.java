@@ -37,6 +37,7 @@ public class DriveBySableMod {
         CableBlocks.register(modEventBus);
         CableBlockEntities.register(modEventBus);
         CableItems.register(modEventBus);
+        CableMenus.register(modEventBus);
         if (!ModList.get().isLoaded("simulated")) {
             CableCreativeTabs.register(modEventBus);
         }

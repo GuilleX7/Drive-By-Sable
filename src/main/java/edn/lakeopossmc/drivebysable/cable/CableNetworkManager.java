@@ -24,12 +24,15 @@ import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.level.Level;
+import net.minecraft.world.phys.AABB;
 import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.Rotation;
 import net.minecraft.world.level.block.state.BlockState;
 
 import java.util.*;
 import java.util.function.Function;
+import net.minecraft.core.SectionPos;
+import net.minecraft.world.level.ChunkPos;
 
 // --- CORE MANAGER FOR THE CABLE NETWORK --- //
 // * One instance per level, server is authoritative, client keeps a mirror
@@ -40,6 +43,9 @@ public final class CableNetworkManager {
     private static final String SOURCE_KEY = "Source";
     private static final String SINK_KEY = "Sink";
     private static final String SOURCE_OWNER_KEY = "SourceOwnerSubLevel";
+
+    // * Which module on the source block owns this connection
+    private static final String SOURCE_MODULE_KEY = "SourceModule";
     private static final String SINK_OWNER_KEY = "SinkOwnerSubLevel";
     private static final String DIRECTION_KEY = "Direction";
     private static final String CHANNEL_KEY = "Channel";
@@ -585,6 +591,56 @@ public final class CableNetworkManager {
     }
 
     // * Hand a cable back for a removed connection
+    public static int countStoredSources(final CompoundTag snapshot) {
+        if (snapshot == null || !snapshot.contains(CONNECTIONS_KEY, Tag.TAG_LIST)) {
+            return 0;
+        }
+
+        final Set<String> sources = new LinkedHashSet<>();
+        for (final Tag entry : snapshot.getList(CONNECTIONS_KEY, Tag.TAG_COMPOUND)) {
+            if (!(entry instanceof final CompoundTag connection) || !isReadable(connection)) {
+                continue;
+            }
+
+            sources.add(connection.getLong(SOURCE_KEY) + "|" + connection.getString(SOURCE_MODULE_KEY));
+        }
+        return sources.size();
+    }
+
+    public static int countConnectionsForSubTarget(final Level level, final BlockPos pos, final String subTarget) {
+        return get(level).countConnectionsForSubTargetInternal(level, pos, subTarget);
+    }
+
+    public int countConnectionsForSubTargetInternal(final Level level, final BlockPos pos, final String subTarget) {
+        final Map<String, Set<CableNetworkSink>> perChannel = sinks.get(pos.asLong());
+        if (perChannel == null) {
+            return 0;
+        }
+
+        if (subTarget == null || subTarget.isEmpty()
+                || !(level.getBlockState(pos).getBlock() instanceof final SubTargetCableEndpoint endpoint)) {
+            int total = 0;
+            for (final Set<CableNetworkSink> sinksOnChannel : perChannel.values()) {
+                total += sinksOnChannel.size();
+            }
+            return total;
+        }
+
+        int total = 0;
+        for (final Map.Entry<String, Set<CableNetworkSink>> entry : perChannel.entrySet()) {
+            if (subTarget.equals(endpoint.cable$subTargetForChannel(level, pos, entry.getKey()))) {
+                total += entry.getValue().size();
+            }
+        }
+        return total;
+    }
+
+    public static void refundCables(final ServerPlayer serverPlayer, final Level level, final int count) {
+        for (int index = 0; index < count; index++) {
+            get(level).refundCable(serverPlayer);
+        }
+    }
+
     private void refundCable(final ServerPlayer serverPlayer) {
         if (serverPlayer == null || !CableConfig.CONFIG.shouldConsumeCables.get() || serverPlayer.hasInfiniteMaterials()) {
             return;
@@ -894,7 +950,74 @@ public final class CableNetworkManager {
 
     //#region // --- SCHEMATIC BACKUP SNAPSHOTS --- //
     // * Backup drive uses these to save and restore connections through schematics
-    // * Relative snapshots are for placing directly, owner aware ones track which sublevel each end belongs to
+    public BackupSnapshot createBoundedBackupSnapshot(
+            final Level level,
+            final BlockPos backupPos,
+            final Direction savedFacing,
+            final AABB bounds
+    ) {
+        final CompoundTag tag = new CompoundTag();
+        final ListTag connections = new ListTag();
+        final SubLevel driveSubLevel = BackupDriveCapture.subLevelOf(level, backupPos);
+        int internalConnections = 0;
+        int skippedConnections = 0;
+
+        for (final Map.Entry<Long, Map<String, Set<CableNetworkSink>>> sourceEntry : sinks.entrySet()) {
+            final BlockPos sourcePos = BlockPos.of(sourceEntry.getKey());
+
+            if (!BackupDriveCapture.isSourceCapturable(level, bounds, driveSubLevel, sourcePos)) {
+                skippedConnections += countConnections(sourceEntry.getValue());
+                continue;
+            }
+
+            for (final Map.Entry<String, Set<CableNetworkSink>> channelEntry : sourceEntry.getValue().entrySet()) {
+                for (final CableNetworkSink sink : channelEntry.getValue()) {
+                    if (!BackupDriveCapture.isSinkCapturable(level, bounds, driveSubLevel, sink.blockPos())) {
+                        skippedConnections++;
+                        continue;
+                    }
+
+                    final CompoundTag connection = new CompoundTag();
+                    connection.putLong(SOURCE_KEY, sourcePos.subtract(backupPos).asLong());
+                    connection.putLong(SINK_KEY, sink.blockPos().subtract(backupPos).asLong());
+                    connection.putByte(DIRECTION_KEY, (byte) sink.direction());
+                    connection.putString(CHANNEL_KEY, channelEntry.getKey());
+                    if (sink.isModule()) {
+                        connection.putString(SINK_CHANNEL_KEY, sink.sinkChannel());
+                    }
+
+                    // * Recorded while the source is still there
+                    final String module = moduleOwnerOf(level, sourcePos, channelEntry.getKey());
+                    if (!module.isEmpty()) {
+                        connection.putString(SOURCE_MODULE_KEY, module);
+                    }
+
+                    connections.add(connection);
+                    internalConnections++;
+                }
+            }
+        }
+
+        if (!connections.isEmpty()) {
+            tag.put(CONNECTIONS_KEY, connections);
+            tag.putString(FACING_KEY, savedFacing.getName());
+            tag.putInt(SNAPSHOT_VERSION_KEY, RELATIVE_SNAPSHOT_VERSION);
+        }
+        if (skippedConnections > 0) {
+            tag.putInt(UNSUPPORTED_CONNECTIONS_KEY, skippedConnections);
+        }
+
+        return new BackupSnapshot(tag, internalConnections, skippedConnections);
+    }
+
+    private static int countConnections(final Map<String, Set<CableNetworkSink>> perChannel) {
+        int total = 0;
+        for (final Set<CableNetworkSink> sinksOnChannel : perChannel.values()) {
+            total += sinksOnChannel.size();
+        }
+        return total;
+    }
+
     public BackupSnapshot createBackupSnapshot(final Level level, final BlockPos backupPos, final Direction savedFacing) {
         final SubLevel backupSubLevel = Sable.HELPER.getContaining(level, backupPos);
         if (backupSubLevel == null) {
@@ -909,7 +1032,257 @@ public final class CableNetworkManager {
         return createRelativeBackupSnapshot(level, backupPos, backupSubLevel, savedFacing);
     }
 
-    // * Picks relative or owner aware restore based on stored snapshot version
+    public CompoundTag pruneRestoredConnections(
+            final Level level,
+            final BlockPos backupPos,
+            final Direction currentFacing,
+            final CompoundTag snapshot
+    ) {
+        if (snapshot == null || !snapshot.contains(CONNECTIONS_KEY, Tag.TAG_LIST)) {
+            return new CompoundTag();
+        }
+
+        final Rotation rotation = placementRotation(snapshot, currentFacing);
+        final ListTag remaining = new ListTag();
+
+        for (final Tag entry : snapshot.getList(CONNECTIONS_KEY, Tag.TAG_COMPOUND)) {
+            if (!(entry instanceof final CompoundTag connection)) {
+                continue;
+            }
+
+            if (!isReadable(connection)) {
+                // * Unreadable entries are kept
+                remaining.add(connection.copy());
+                continue;
+            }
+
+            final BlockPos sourcePos = resolveSource(connection, backupPos, rotation);
+            final BlockPos sinkPos = resolveSink(connection, backupPos, rotation);
+            final String channel = connection.getString(CHANNEL_KEY);
+            final String sinkChannel = connection.getString(SINK_CHANNEL_KEY);
+            final Direction sinkDirection = resolveSinkDirection(connection, sinkChannel, rotation);
+
+            // * Already placed
+            if (containsConnection(sourcePos, sinkPos, sinkDirection, channel, sinkChannel)) {
+                continue;
+            }
+
+            if (!isRestorable(level, sourcePos, channel, sinkPos, sinkChannel)) {
+                continue;
+            }
+
+            remaining.add(connection.copy());
+        }
+
+        if (remaining.isEmpty()) {
+            return new CompoundTag();
+        }
+
+        final CompoundTag pruned = new CompoundTag();
+        pruned.put(CONNECTIONS_KEY, remaining);
+        pruned.putString(FACING_KEY, snapshot.getString(FACING_KEY));
+        pruned.putInt(SNAPSHOT_VERSION_KEY, snapshot.getInt(SNAPSHOT_VERSION_KEY));
+        if (snapshot.contains(UNSUPPORTED_CONNECTIONS_KEY)) {
+            pruned.putInt(UNSUPPORTED_CONNECTIONS_KEY, snapshot.getInt(UNSUPPORTED_CONNECTIONS_KEY));
+        }
+        return pruned;
+    }
+
+    // * Could this connection still be made if the player fixed things?
+    private boolean isRestorable(
+            final Level level,
+            final BlockPos sourcePos,
+            final String channel,
+            final BlockPos sinkPos,
+            final String sinkChannel
+    ) {
+        if (!level.getBlockState(sourcePos).isAir() && !isValidChannel(level, sourcePos, channel)) {
+            return false;
+        }
+
+        return level.getBlockState(sinkPos).isAir() || isValidSinkChannel(level, sinkPos, sinkChannel);
+    }
+
+    public record SnapshotSummary(
+            int loadedSources,
+            int missingSources,
+            int loadedSinks,
+            int missingSinks
+    ) {
+    }
+
+    public SnapshotSummary summariseSnapshot(
+            final Level level,
+            final BlockPos backupPos,
+            final Direction currentFacing,
+            final CompoundTag snapshot
+    ) {
+        // * Keyed by module
+        final Map<String, Boolean> sources = new LinkedHashMap<>();
+        final Map<String, Boolean> sinks = new LinkedHashMap<>();
+
+        if (snapshot == null || !snapshot.contains(CONNECTIONS_KEY, Tag.TAG_LIST)) {
+            return new SnapshotSummary(0, 0, 0, 0);
+        }
+
+        final Rotation rotation = placementRotation(snapshot, currentFacing);
+
+        for (final Tag entry : snapshot.getList(CONNECTIONS_KEY, Tag.TAG_COMPOUND)) {
+            if (!(entry instanceof final CompoundTag connection) || !isReadable(connection)) {
+                continue;
+            }
+
+            final BlockPos sourcePos = resolveSource(connection, backupPos, rotation);
+            final BlockPos sinkPos = resolveSink(connection, backupPos, rotation);
+            final String channel = connection.getString(CHANNEL_KEY);
+            final String sinkChannel = connection.getString(SINK_CHANNEL_KEY);
+            final Direction sinkDirection = resolveSinkDirection(connection, sinkChannel, rotation);
+
+            final boolean present = containsConnection(sourcePos, sinkPos, sinkDirection, channel, sinkChannel);
+
+            // * A module is its own source
+            sources.merge(sourceIdentity(level, sourcePos, connection), present, Boolean::logicalOr);
+            // * One entry per connection
+            sinks.merge(
+                    sourcePos.toShortString() + "|" + channel
+                            + "->" + sinkPos.toShortString() + "|" + sinkDirection + "|" + sinkChannel,
+                    present,
+                    Boolean::logicalOr
+            );
+        }
+
+        return new SnapshotSummary(
+                (int) sources.values().stream().filter(Boolean::booleanValue).count(),
+                (int) sources.values().stream().filter(loaded -> !loaded).count(),
+                (int) sinks.values().stream().filter(Boolean::booleanValue).count(),
+                (int) sinks.values().stream().filter(loaded -> !loaded).count()
+        );
+    }
+
+    public Map<BlockPos, Set<String>> connectedSourceModules(
+            final Level level,
+            final BlockPos backupPos,
+            final Direction currentFacing,
+            final CompoundTag snapshot
+    ) {
+        final Map<BlockPos, Set<String>> connected = new LinkedHashMap<>();
+        if (snapshot == null || !snapshot.contains(CONNECTIONS_KEY, Tag.TAG_LIST)) {
+            return connected;
+        }
+
+        final Rotation rotation = placementRotation(snapshot, currentFacing);
+
+        for (final Tag entry : snapshot.getList(CONNECTIONS_KEY, Tag.TAG_COMPOUND)) {
+            if (!(entry instanceof final CompoundTag connection) || !isReadable(connection)) {
+                continue;
+            }
+
+            final BlockPos sourcePos = resolveSource(connection, backupPos, rotation);
+            final BlockPos sinkPos = resolveSink(connection, backupPos, rotation);
+            final String channel = connection.getString(CHANNEL_KEY);
+            final String sinkChannel = connection.getString(SINK_CHANNEL_KEY);
+            final Direction sinkDirection = resolveSinkDirection(connection, sinkChannel, rotation);
+
+            if (!containsConnection(sourcePos, sinkPos, sinkDirection, channel, sinkChannel)) {
+                continue;
+            }
+
+            final String owner = moduleOwnerOf(level, sourcePos, channel);
+            connected.computeIfAbsent(sourcePos.immutable(), ignored -> new LinkedHashSet<>()).add(owner);
+        }
+        return connected;
+    }
+
+    // * What counts as one source for reporting?
+    private static String sourceIdentity(final Level level, final BlockPos source, final CompoundTag connection) {
+        // * The module recorded at save time
+        String module = connection.getString(SOURCE_MODULE_KEY);
+
+        if (module.isEmpty()) {
+            module = moduleOwnerOf(level, source, connection.getString(CHANNEL_KEY));
+        }
+
+        return source.toShortString() + "|" + module;
+    }
+
+    // * Which module on this block owns the channel
+    private static String moduleOwnerOf(final Level level, final BlockPos source, final String channel) {
+        if (!(level.getBlockState(source).getBlock() instanceof final SubTargetCableEndpoint endpoint)) {
+            return "";
+        }
+
+        final String owner = endpoint.cable$subTargetForChannel(level, source, channel);
+        return owner == null ? "" : owner;
+    }
+
+    public int countPendingConnections(
+            final Level level,
+            final BlockPos backupPos,
+            final Direction currentFacing,
+            final CompoundTag snapshot
+    ) {
+        if (snapshot == null || !snapshot.contains(CONNECTIONS_KEY, Tag.TAG_LIST)) {
+            return 0;
+        }
+
+        final Rotation rotation = placementRotation(snapshot, currentFacing);
+        int pending = 0;
+
+        for (final Tag entry : snapshot.getList(CONNECTIONS_KEY, Tag.TAG_COMPOUND)) {
+            if (!(entry instanceof final CompoundTag connection) || !isReadable(connection)) {
+                continue;
+            }
+
+            final BlockPos sourcePos = resolveSource(connection, backupPos, rotation);
+            final BlockPos sinkPos = resolveSink(connection, backupPos, rotation);
+            final String channel = connection.getString(CHANNEL_KEY);
+            final String sinkChannel = connection.getString(SINK_CHANNEL_KEY);
+            final Direction sinkDirection = resolveSinkDirection(connection, sinkChannel, rotation);
+
+            // * Counted only when it is missing
+            if (!containsConnection(sourcePos, sinkPos, sinkDirection, channel, sinkChannel)
+                    && isRestorable(level, sourcePos, channel, sinkPos, sinkChannel)) {
+                pending++;
+            }
+        }
+        return pending;
+    }
+
+    //#region // --- SHARED SNAPSHOT READING --- //
+    private static boolean isReadable(final CompoundTag connection) {
+        return connection.contains(SOURCE_KEY, Tag.TAG_LONG)
+                && connection.contains(SINK_KEY, Tag.TAG_LONG)
+                && connection.contains(DIRECTION_KEY, Tag.TAG_BYTE)
+                && connection.contains(CHANNEL_KEY, Tag.TAG_STRING);
+    }
+
+    private static Rotation placementRotation(final CompoundTag snapshot, final Direction currentFacing) {
+        final int snapshotVersion = snapshot.getInt(SNAPSHOT_VERSION_KEY);
+        final Direction savedFacing = Direction.byName(snapshot.getString(FACING_KEY));
+        return snapshotVersion >= OWNER_AWARE_SNAPSHOT_VERSION || savedFacing == null
+                ? Rotation.NONE
+                : getRotation(savedFacing, currentFacing);
+    }
+
+    private static BlockPos resolveSource(final CompoundTag connection, final BlockPos backupPos, final Rotation rotation) {
+        return backupPos.offset(rotateRelative(BlockPos.of(connection.getLong(SOURCE_KEY)), rotation));
+    }
+
+    private static BlockPos resolveSink(final CompoundTag connection, final BlockPos backupPos, final Rotation rotation) {
+        return backupPos.offset(rotateRelative(BlockPos.of(connection.getLong(SINK_KEY)), rotation));
+    }
+
+    // * A module sink keeps its stored direction
+    private static Direction resolveSinkDirection(
+            final CompoundTag connection,
+            final String sinkChannel,
+            final Rotation rotation
+    ) {
+        final Direction stored = Direction.from3DDataValue(connection.getByte(DIRECTION_KEY));
+        return sinkChannel.isEmpty() ? rotateDirection(stored, rotation) : stored;
+    }
+    //#endregion
+
     public RestoreResult restoreBackupSnapshot(
             final Level level,
             final BlockPos backupPos,
@@ -1079,10 +1452,8 @@ public final class CableNetworkManager {
             final Direction currentFacing,
             final CompoundTag snapshot
     ) {
+        // * Null means the drive is loose in world
         final SubLevel backupSubLevel = Sable.HELPER.getContaining(level, backupPos);
-        if (backupSubLevel == null) {
-            return new RestoreResult(0, 0, 0, snapshot.getInt(UNSUPPORTED_CONNECTIONS_KEY), 0, false);
-        }
 
         final int snapshotVersion = snapshot.getInt(SNAPSHOT_VERSION_KEY);
         final Direction savedFacing = Direction.byName(snapshot.getString(FACING_KEY));
@@ -1118,8 +1489,9 @@ public final class CableNetworkManager {
                         ? rotateDirection(Direction.from3DDataValue(connection.getByte(DIRECTION_KEY)), rotation)
                         : Direction.from3DDataValue(connection.getByte(DIRECTION_KEY));
 
-                if (!isSameSubLevel(backupSubLevel, Sable.HELPER.getContaining(level, sourcePos))
-                        || !isSameSubLevel(backupSubLevel, Sable.HELPER.getContaining(level, sinkPos))) {
+                // * Same level as the drive
+                if (!BackupDriveCapture.isSameLevel(backupSubLevel, Sable.HELPER.getContaining(level, sourcePos))
+                        || !BackupDriveCapture.isSameLevel(backupSubLevel, Sable.HELPER.getContaining(level, sinkPos))) {
                     deferredConnections++;
                     continue;
                 }
@@ -1246,7 +1618,34 @@ public final class CableNetworkManager {
         });
     }
 
-    // * Rebuilds node graph for stale faces, run once per tick
+    // * Rebuilds node graph
+    public void markDirtyIfChunkInvolved(final ChunkPos chunk) {
+        if (graphDirty) {
+            return;
+        }
+
+        for (final Map.Entry<Long, Map<String, Set<CableNetworkSink>>> sourceEntry : sinks.entrySet()) {
+            if (isInChunk(BlockPos.of(sourceEntry.getKey()), chunk)) {
+                graphDirty = true;
+                return;
+            }
+
+            for (final Set<CableNetworkSink> sinksOnChannel : sourceEntry.getValue().values()) {
+                for (final CableNetworkSink sink : sinksOnChannel) {
+                    if (isInChunk(sink.blockPos(), chunk)) {
+                        graphDirty = true;
+                        return;
+                    }
+                }
+            }
+        }
+    }
+
+    private static boolean isInChunk(final BlockPos pos, final ChunkPos chunk) {
+        return SectionPos.blockToSectionCoord(pos.getX()) == chunk.x
+                && SectionPos.blockToSectionCoord(pos.getZ()) == chunk.z;
+    }
+
     public void flushPendingGraphRebuild(final Level level) {
         if (!graphDirty) {
             return;
@@ -1329,7 +1728,7 @@ public final class CableNetworkManager {
             addSinkReference(sourceKey, channel, sink);
         }
 
-        // * Schedule a full signal rebroadcast on the first tick after load
+        // * Moved reload marker here
         graphDirty = true;
     }
 

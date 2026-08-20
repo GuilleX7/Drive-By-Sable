@@ -314,7 +314,9 @@ public final class ClientCableNetworkHandler {
         moduleOutlines.clear();
 
         if (selectedSource != null) {
-            drawSourceOutline(level, selectedSource, selectedSourceModule, LineColor.SOURCE.SELECTED.getColor());
+            if (!claimedByDrive(selectedSource, selectedSourceModule)) {
+                drawSourceOutline(level, selectedSource, selectedSourceModule, LineColor.SOURCE.SELECTED.getColor());
+            }
         }
 
         // * The armed output gets the sink highlight straight away
@@ -1190,13 +1192,15 @@ public final class ClientCableNetworkHandler {
                 }
 
                 // * Wired modules elsewhere on this panel are just other sources
-                siblingModules.forEach(module -> drawModuleOutline(
-                        level,
-                        source,
-                        module,
-                        "cableNetworkSource",
-                        LineColor.SOURCE.SAME_NETWORK.getColor()
-                ));
+                siblingModules.stream()
+                        .filter(module -> !claimedByDrive(source, module))
+                        .forEach(module -> drawModuleOutline(
+                                level,
+                                source,
+                                module,
+                                "cableNetworkSource",
+                                LineColor.SOURCE.SAME_NETWORK.getColor()
+                        ));
             } else {
                 drawUnselectedSource(level, source, perChannel);
             }
@@ -1204,6 +1208,20 @@ public final class ClientCableNetworkHandler {
     }
 
     // * Other sources in the network
+    // * Whether a drive is already saying something about this source
+    private static boolean claimedByDrive(final BlockPos source) {
+        return BackupDrivePreview.isOutlining(source) || BackupDriveLoadHighlight.isOutlining(source);
+    }
+
+    private static boolean claimedByDrive(final BlockPos source, final String module) {
+        if (module == null || module.isEmpty()) {
+            return claimedByDrive(source);
+        }
+
+        return BackupDrivePreview.isOutliningModule(source, module)
+                || BackupDriveLoadHighlight.isOutliningModule(source, module);
+    }
+
     private static void drawUnselectedSource(
             final Level level,
             final BlockPos source,
@@ -1211,14 +1229,16 @@ public final class ClientCableNetworkHandler {
     ) {
         final int color = LineColor.SOURCE.SAME_NETWORK.getColor();
         if (!(level.getBlockState(source).getBlock() instanceof SubTargetCableEndpoint)) {
-            drawOutline(level, source, color);
+            if (!claimedByDrive(source)) {
+                drawOutline(level, source, color);
+            }
             return;
         }
 
         final Set<String> drawn = new HashSet<>();
         for (final String channel : perChannel.keySet()) {
             final String module = subTargetForChannel(level, source, channel);
-            if (module != null && drawn.add(module)) {
+            if (module != null && drawn.add(module) && !claimedByDrive(source, module)) {
                 drawModuleOutline(level, source, module, "cableNetworkSource", color);
             }
         }
@@ -1304,8 +1324,29 @@ public final class ClientCableNetworkHandler {
         moduleOutlines.computeIfAbsent(pos.immutable(), ignored -> new LinkedHashMap<>()).put(subTarget, color);
     }
 
+    // * The panel renderer asks here for every module box
     public static Map<String, Integer> moduleOutlinesFor(final BlockPos pos) {
-        return moduleOutlines.getOrDefault(pos, Map.of());
+        final Map<String, Integer> fromTools = moduleOutlines.getOrDefault(pos, Map.of());
+        final Map<String, Integer> fromPreview = BackupDrivePreview.moduleOutlinesFor(pos);
+        final Map<String, Integer> fromLoad = BackupDriveLoadHighlight.moduleOutlinesFor(pos);
+
+        if (!fromLoad.isEmpty()) {
+            final Map<String, Integer> merged = new LinkedHashMap<>(fromTools);
+            merged.putAll(fromPreview);
+            merged.putAll(fromLoad);
+            return merged;
+        }
+
+        if (fromPreview.isEmpty()) {
+            return fromTools;
+        }
+        if (fromTools.isEmpty()) {
+            return fromPreview;
+        }
+
+        final Map<String, Integer> merged = new LinkedHashMap<>(fromTools);
+        merged.putAll(fromPreview);
+        return merged;
     }
 
     public static void renderLocalBox(

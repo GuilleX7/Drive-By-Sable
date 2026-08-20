@@ -1,5 +1,6 @@
 package edn.lakeopossmc.drivebysable.compat.dashpanels;
 
+import edn.lakeopossmc.drivebysable.DriveBySableMod;
 import edn.lakeopossmc.drivebysable.cable.CableNetworkManager;
 import edn.lakeopossmc.drivebysable.compat.ControllerSignalStore;
 import moth.boxxed.panels.api.module.Module;

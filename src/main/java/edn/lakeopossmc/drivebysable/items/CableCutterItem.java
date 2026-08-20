@@ -41,6 +41,16 @@ public class CableCutterItem extends Item {
 
     //#region // --- ITEM INTERACTION --- //
     @Override
+    public InteractionResult onItemUseFirst(final ItemStack stack, final UseOnContext context) {
+        final Player interacting = context.getPlayer();
+        if (interacting == null || interacting.isShiftKeyDown()) {
+            return InteractionResult.PASS;
+        }
+
+        return InteractionResult.sidedSuccess(context.getLevel().isClientSide());
+    }
+
+    @Override
     public InteractionResult useOn(final UseOnContext context) {
         // * Get current world/dim
         final Level level = context.getLevel();
@@ -48,7 +58,16 @@ public class CableCutterItem extends Item {
         final BlockPos pos = context.getClickedPos();
 
         // * A dashpanel is one block but many modules, each its own source
-        final String subTarget = resolveSubTarget(level, pos, context.getPlayer());
+        final Player player = context.getPlayer();
+        if (player == null) {
+            return InteractionResult.PASS;
+        }
+
+        if (!player.isShiftKeyDown()) {
+            return InteractionResult.PASS;
+        }
+
+        final String subTarget = resolveSubTarget(level, pos, player);
 
         // * Check if on client side first
         if (level.isClientSide()) {
@@ -60,14 +79,14 @@ public class CableCutterItem extends Item {
 
         // * Check whether connections were removed or not
         final boolean removed = subTarget != null
-                ? CableNetworkManager.removeAllForSubTarget((ServerPlayer) context.getPlayer(), level, pos, subTarget)
-                : CableNetworkManager.removeAllFromSource((ServerPlayer) context.getPlayer(), level, pos);
+                ? CableNetworkManager.removeAllForSubTarget((ServerPlayer) player, level, pos, subTarget)
+                : CableNetworkManager.removeAllFromSource((ServerPlayer) player, level, pos);
         if (removed) {
             // * Play shear use sound if success
             level.playSound(null, pos, SoundEvents.SHEEP_SHEAR, SoundSource.BLOCKS, 1.0F, 1.0F);
         } else {
             // * Flash the error and play the deny sound
-            CableServerFeedback.showInvalidOperationMessage((ServerPlayer) context.getPlayer(), "drivebysable.invalid_op.no_connections");
+            CableServerFeedback.showInvalidOperationMessage((ServerPlayer) player, "drivebysable.invalid_op.no_connections");
         }
 
         // * Return correct trigger for item use anim

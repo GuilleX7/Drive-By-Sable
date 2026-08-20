@@ -12,6 +12,14 @@ import net.minecraft.world.level.block.state.BlockState;
 import net.neoforged.bus.api.SubscribeEvent;
 import net.neoforged.neoforge.event.level.BlockEvent;
 import net.neoforged.neoforge.event.tick.LevelTickEvent;
+import edn.lakeopossmc.drivebysable.cable.SubTargetCableEndpoint;
+import net.minecraft.server.MinecraftServer;
+import net.minecraft.server.TickTask;
+import net.minecraft.world.level.block.Block;
+import java.util.List;
+import net.neoforged.neoforge.event.level.ChunkEvent;
+import java.util.HashMap;
+import java.util.Map;
 
 // --- SHARED SERVER SIDE EVENT HOOKS --- //
 public final class CableCommonEvents {
@@ -19,6 +27,17 @@ public final class CableCommonEvents {
     }
 
     // * Flush graph rebuilds and tick controller compat
+    // * Marking the graph dirty lets the next tick push signals again
+    @SubscribeEvent
+    public static void onChunkLoad(final ChunkEvent.Load event) {
+        if (!(event.getLevel() instanceof final ServerLevel level)) {
+            return;
+        }
+
+        CableNetworkManager.get(level).markDirtyIfChunkInvolved(event.getChunk().getPos());
+    }
+
+    @SubscribeEvent
     public static void onLevelTick(final LevelTickEvent.Post event) {
         final Level level = event.getLevel();
         if (level.isClientSide()) {
@@ -89,7 +108,69 @@ public final class CableCommonEvents {
 
         final ServerPlayer player = event.getPlayer() instanceof final ServerPlayer serverPlayer ? serverPlayer : null;
 
+        final Block brokenBlock = event.getState().getBlock();
+
+        if (brokenBlock instanceof final SubTargetCableEndpoint endpoint) {
+            removeVanishedSubTargets(level, pos, player, brokenBlock, endpoint);
+            return;
+        }
+
         // * Run immediately so the player refund fires before onRemove
         CableNetworkManager.get(level).removeAllFromSourceInternal(player, level, pos);
+    }
+
+    // * Which modules the break actually took
+    private static void removeVanishedSubTargets(
+            final ServerLevel level,
+            final BlockPos pos,
+            final ServerPlayer player,
+            final Block brokenBlock,
+            final SubTargetCableEndpoint endpoint
+    ) {
+        final MinecraftServer server = level.getServer();
+        final List<String> before = List.copyOf(endpoint.cable$getSubTargets(level, pos));
+
+        final Map<String, Integer> connectionsBefore = new HashMap<>();
+        for (final String subTarget : before) {
+            connectionsBefore.put(subTarget, CableNetworkManager.countConnectionsForSubTarget(level, pos, subTarget));
+        }
+
+        if (server == null) {
+            CableNetworkManager.get(level).removeAllFromSourceInternal(player, level, pos);
+            return;
+        }
+
+        server.tell(new TickTask(server.getTickCount() + 1, () -> {
+            if (CableNetworkManager.isPendingAssembly(level, pos)) {
+                return;
+            }
+
+            if (!level.getBlockState(pos).is(brokenBlock)) {
+                CableNetworkManager.get(level).removeAllFromSourceInternal(player, level, pos);
+                return;
+            }
+
+            if (!(level.getBlockState(pos).getBlock() instanceof final SubTargetCableEndpoint current)) {
+                return;
+            }
+
+            // * Refund covers exactly that module
+            final List<String> remaining = current.cable$getSubTargets(level, pos);
+            for (final String subTarget : before) {
+                if (remaining.contains(subTarget)) {
+                    continue;
+                }
+
+                // * Whatever is left is removed here
+                final int stillThere = CableNetworkManager.countConnectionsForSubTarget(level, pos, subTarget);
+                final int alreadyGone = connectionsBefore.getOrDefault(subTarget, 0) - stillThere;
+
+                if (alreadyGone > 0) {
+                    CableNetworkManager.refundCables(player, level, alreadyGone);
+                }
+
+                CableNetworkManager.removeAllForSubTarget(player, level, pos, subTarget);
+            }
+        }));
     }
 }
