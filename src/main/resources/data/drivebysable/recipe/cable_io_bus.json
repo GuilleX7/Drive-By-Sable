@@ -2,7 +2,7 @@
   "type": "create:sequenced_assembly",
   "ingredient": { "tag": "c:plates/gold" },
   "results": [
-    { "chance": 135.0, "id": "drivebysable:cable_io_bus" },
+    { "chance": 153.0, "id": "drivebysable:cable_io_bus" },
     { "chance": 5.0, "id": "create:transmitter" },
     { "chance": 5.0, "id": "create:sturdy_sheet" },
     { "chance": 2.5, "id": "create:golden_sheet" },
