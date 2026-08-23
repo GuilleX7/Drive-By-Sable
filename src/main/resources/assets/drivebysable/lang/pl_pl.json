@@ -80,7 +80,11 @@
   "block.drivebysable.cable_typewriter_hub.tooltip.condition4": "Po połączeniu za pomocą Kabla",
   "block.drivebysable.cable_typewriter_hub.tooltip.behaviour4": "Wysyła _sygnał redstone_ na odpowiednim _kanale kabla_ za każdym razem, gdy dany klawisz zostanie naciśnięty.",
 
-  "block.drivebysable.backup_drive.tooltip.summary": "Zapisuje _połączenia kablowe w obrębie tego samego podpoziomu_ w _schematach_ i przywraca je po wczytaniu schematu",
+  "block.drivebysable.backup_drive.tooltip.summary": "Zapisuje _dane połączeń Sieci_ w skonfigurowanym zasięgu. Zapisane dane pozostają w _schematach_, więc połączenia można przenieść w dowolne miejsce.",
+  "block.drivebysable.backup_drive.tooltip.condition1": "Po kliknięciu PPM",
+  "block.drivebysable.backup_drive.tooltip.behaviour1": "Otwiera ręczny _Interfejs Konfiguracji_.",
+  "block.drivebysable.backup_drive.tooltip.condition2": "Gdy zapisany w pliku schematu",
+  "block.drivebysable.backup_drive.tooltip.behaviour2": "Przechowuje zapisane _dane Sieci_, aby wczytać je po umieszczeniu schematu. Zapisywanie i wczytywanie odbywa się również przez _Interfejs Konfiguracji_.",
 
   "drivebysable.ponder.tag.main": "Narzędzia Sieci Kablowej",
   "drivebysable.ponder.tag.main.description": "Sieciowanie redstone oparte na kablach, bez potrzeby częstotliwości",

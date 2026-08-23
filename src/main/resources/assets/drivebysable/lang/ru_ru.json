@@ -80,7 +80,11 @@
   "block.drivebysable.cable_typewriter_hub.tooltip.condition4": "Когда подключена по кабелю",
   "block.drivebysable.cable_typewriter_hub.tooltip.behaviour4": "Активирует _редстоун-сигнал_ на соотвествующем _кабельном канале_.",
 
-  "block.drivebysable.backup_drive.tooltip.summary": "Сохраняет все _кабельные соединения на одной физической штуковине_ в _схематики_ и восстанавливает их, когда схематика загружена",
+  "block.drivebysable.backup_drive.tooltip.summary": "Сохраняет _данные соединений сети_ в пределах заданной области. Сохранённые данные остаются в _схематиках_, поэтому соединения можно перенести куда угодно.",
+  "block.drivebysable.backup_drive.tooltip.condition1": "ПКМ по блоку",
+  "block.drivebysable.backup_drive.tooltip.behaviour1": "Открывает _интерфейс конфигурации_.",
+  "block.drivebysable.backup_drive.tooltip.condition2": "При сохранении в файл схематики",
+  "block.drivebysable.backup_drive.tooltip.behaviour2": "Хранит сохранённые _данные сети_ для загрузки после установки схематики. Сохранение и загрузка также выполняются через _интерфейс конфигурации_.",
 
   "drivebysable.ponder.tag.main": "Кабельные сети",
   "drivebysable.ponder.tag.main.description": "Редстоуновые сети, построенные на использовании кабелей.",

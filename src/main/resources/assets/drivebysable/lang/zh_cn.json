@@ -80,7 +80,11 @@
   "block.drivebysable.cable_typewriter_hub.tooltip.condition4": "通过电缆连接时",
   "block.drivebysable.cable_typewriter_hub.tooltip.behaviour4": "每当按下该按键时，会在对应的_电缆通道_上输出_红石信号_。",
 
-  "block.drivebysable.backup_drive.tooltip.summary": "将_同一子关卡内的电缆连接_保存到_蓝图_中，并在加载蓝图时恢复它们",
+  "block.drivebysable.backup_drive.tooltip.summary": "在配置的范围内保存_网络连接数据_。保存的数据会保留在_蓝图_中，因此连接可以被转移到任何地方。",
+  "block.drivebysable.backup_drive.tooltip.condition1": "右键点击时",
+  "block.drivebysable.backup_drive.tooltip.behaviour1": "打开手动_配置界面_。",
+  "block.drivebysable.backup_drive.tooltip.condition2": "保存到蓝图文件中时",
+  "block.drivebysable.backup_drive.tooltip.behaviour2": "储存已保存的_网络数据_，以便在放置蓝图后加载。保存与加载同样通过_配置界面_完成。",
 
   "drivebysable.ponder.tag.main": "电缆联网工具",
   "drivebysable.ponder.tag.main.description": "基于电缆的红石联网，无需频率",

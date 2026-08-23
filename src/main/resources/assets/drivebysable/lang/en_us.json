@@ -80,7 +80,11 @@
   "block.drivebysable.cable_typewriter_hub.tooltip.condition4": "When connected via Cable",
   "block.drivebysable.cable_typewriter_hub.tooltip.behaviour4": "Outputs a _redstone signal_ on the matching _cable channel_ whenever that key is pressed.",
 
-  "block.drivebysable.backup_drive.tooltip.summary": "Saves _same-sublevel cable connections_ into _schematics_ and restores them when the schematic is loaded",
+  "block.drivebysable.backup_drive.tooltip.summary": "Saves _Network connection data_ within a configured range. Saved data persists in _schematics_, so connections can be transferred anywhere.",
+  "block.drivebysable.backup_drive.tooltip.condition1": "When R-Clicked",
+  "block.drivebysable.backup_drive.tooltip.behaviour1": "Opens the manual _Configuration Interface_.",
+  "block.drivebysable.backup_drive.tooltip.condition2": "When saved in a schematic file",
+  "block.drivebysable.backup_drive.tooltip.behaviour2": "Stores saved _Network data_ to be loaded after a schematic is placed. Saving and loading is also done using the _Configuration Interface_.",
 
   "drivebysable.ponder.tag.main": "Cable Networking Tools",
   "drivebysable.ponder.tag.main.description": "Cable-based redstone networking, no frequencies required",
