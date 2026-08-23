@@ -18,6 +18,7 @@ import net.neoforged.neoforge.client.gui.ConfigurationScreen;
 import net.neoforged.neoforge.client.gui.IConfigScreenFactory;
 import net.neoforged.neoforge.common.NeoForge;
 import org.slf4j.Logger;
+import edn.lakeopossmc.drivebysable.recipe.CableConfigCondition;
 
 // --- MOD ENTRY POINT --- //
 @Mod(DriveBySableMod.MOD_ID)
@@ -38,6 +39,7 @@ public class DriveBySableMod {
         CableBlockEntities.register(modEventBus);
         CableItems.register(modEventBus);
         CableMenus.register(modEventBus);
+        CableConfigCondition.register(modEventBus);
         if (!ModList.get().isLoaded("simulated")) {
             CableCreativeTabs.register(modEventBus);
         }
@@ -45,10 +47,12 @@ public class DriveBySableMod {
         modEventBus.addListener(CablePackets::register);
         modEventBus.addListener(this::commonSetup);
         modEventBus.addListener(this::clientSetup);
+        modEventBus.addListener(CableConfigReload::onConfigReloading);
 
         NeoForge.EVENT_BUS.addListener(CableCommonEvents::onLevelTick);
         NeoForge.EVENT_BUS.addListener(CableCommonEvents::onNeighborNotify);
         NeoForge.EVENT_BUS.addListener(CableCommonEvents::onBlockBreak);
+        NeoForge.EVENT_BUS.addListener(CableConfigReload::onAddReloadListener);
     }
     //#endregion
 

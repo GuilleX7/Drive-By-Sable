@@ -51,4 +51,22 @@ public final class CableSounds {
                 BACKUP_DRIVE_STEP.get()
         );
     }
+
+    //#region // --- ANDESITE THEMED HUB SOUNDS --- //
+    public static SoundType cableHubSoundType(final SoundType defaultType) {
+        return andesiteTheming() ? SoundType.STONE : defaultType;
+    }
+
+    public static SoundType advancedCableHubSoundType(final SoundType defaultType) {
+        return andesiteTheming() ? SoundType.METAL : defaultType;
+    }
+
+    private static boolean andesiteTheming() {
+        try {
+            return CableConfig.CONFIG.andesiteHub.get();
+        } catch (final Exception e) {
+            return false;
+        }
+    }
+    //#endregion
 }

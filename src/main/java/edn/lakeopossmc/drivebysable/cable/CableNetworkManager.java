@@ -25,6 +25,7 @@ import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.phys.AABB;
+import net.minecraft.world.phys.Vec3;
 import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.Rotation;
 import net.minecraft.world.level.block.state.BlockState;
@@ -356,31 +357,49 @@ public final class CableNetworkManager {
         }
     }
 
-    // * Straight line distance between the two block positions
-    // * A sublevel stores its positions differently, so those connections are refused
+    //#region // --- RANGE AND CROSS-LEVEL LIMITS --- //
     public static RangeResult checkRange(final Level level, final BlockPos source, final BlockPos sinkPos) {
-        if (!CableConfig.CONFIG.enforceRangeLimit.get()) {
+        final boolean enforceRange = CableConfig.CONFIG.rangeLimitEnforced.get();
+        final boolean forbidCrossLevel = CableConfig.CONFIG.forbidCrossLevelConnections.get();
+
+        // * Neither gate is on, so nothing needs resolving
+        if (!enforceRange && !forbidCrossLevel) {
             return RangeResult.OK;
         }
 
-        if (!isSameSubLevelContext(level, source, sinkPos)) {
+        final SubLevel sourceSubLevel = Sable.HELPER.getContaining(level, source);
+        final SubLevel sinkSubLevel = Sable.HELPER.getContaining(level, sinkPos);
+        final boolean sameContext = isSameSubLevelContext(sourceSubLevel, sinkSubLevel);
+
+        if (forbidCrossLevel && !sameContext) {
             return RangeResult.CROSS_LEVEL;
         }
 
+        if (!enforceRange) {
+            return RangeResult.OK;
+        }
+
+        final double distanceSqr = sameContext
+                ? source.distSqr(sinkPos)
+                : toWorldSpace(source, sourceSubLevel).distanceToSqr(toWorldSpace(sinkPos, sinkSubLevel));
+
         final long limit = CableConfig.CONFIG.rangeLimit.get();
-        return source.distSqr(sinkPos) > (double) limit * limit ? RangeResult.OUT_OF_RANGE : RangeResult.OK;
+        return distanceSqr > (double) limit * limit ? RangeResult.OUT_OF_RANGE : RangeResult.OK;
+    }
+
+    private static Vec3 toWorldSpace(final BlockPos pos, final SubLevel subLevel) {
+        final Vec3 centre = Vec3.atCenterOf(pos);
+        return subLevel == null ? centre : subLevel.logicalPose().transformPosition(centre);
     }
 
     // * Both in the world, or both in the same sublevel
-    private static boolean isSameSubLevelContext(final Level level, final BlockPos first, final BlockPos second) {
-        final SubLevel firstSubLevel = Sable.HELPER.getContaining(level, first);
-        final SubLevel secondSubLevel = Sable.HELPER.getContaining(level, second);
-
-        if (firstSubLevel == null || secondSubLevel == null) {
-            return firstSubLevel == null && secondSubLevel == null;
+    private static boolean isSameSubLevelContext(final SubLevel first, final SubLevel second) {
+        if (first == null || second == null) {
+            return first == null && second == null;
         }
-        return Objects.equals(firstSubLevel.getUniqueId(), secondSubLevel.getUniqueId());
+        return Objects.equals(first.getUniqueId(), second.getUniqueId());
     }
+    //#endregion
 
     // * Empty means a plain block face, which any block can be
     private boolean isValidSinkChannel(final Level level, final BlockPos sinkPos, final String sinkChannel) {
@@ -1949,7 +1968,7 @@ public final class CableNetworkManager {
         FAIL_INVALID_CHANNEL("This channel is not available on this source!", "drivebysable.invalid_op.stale_source_channel"),
         FAIL_INVALID_SINK_CHANNEL("This channel is not available on this output!", "drivebysable.invalid_op.stale_output_channel"),
         FAIL_OUT_OF_RANGE("That output is too far from this source!", "drivebysable.invalid_op.out_of_range"),
-        FAIL_CROSS_LEVEL("Range limit disables cross-level connections!", "drivebysable.invalid_op.cross_level");
+        FAIL_CROSS_LEVEL("Cross-level connections are disabled!", "drivebysable.invalid_op.cross_level");
 
         private final String description;
         private final String langKey;

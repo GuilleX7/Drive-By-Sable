@@ -9,13 +9,24 @@ public class CableConfig {
     public static final CableConfig CONFIG;
     public static final ModConfigSpec CONFIG_SPEC;
 
+    //#region // --- UNGROUPED --- //
     public final ModConfigSpec.BooleanValue shouldConsumeCables;
     public final ModConfigSpec.BooleanValue allowCableDisconnect;
-    public final ModConfigSpec.BooleanValue enforceRangeLimit;
+    //#endregion
+
+    //#region // --- NETWORK CONSTRAINTS --- //
+    public final ModConfigSpec.BooleanValue forbidCrossLevelConnections;
     public final ModConfigSpec.IntValue rangeLimit;
-    public final ModConfigSpec.IntValue maxOutputsPerChannel;
-    public final ModConfigSpec.IntValue maxSourcesPerSubLevel;
+    public final ModConfigSpec.BooleanValue rangeLimitEnforced;
     public final ModConfigSpec.IntValue maxSourcesInWorld;
+    public final ModConfigSpec.IntValue maxSourcesPerSubLevel;
+    public final ModConfigSpec.IntValue maxOutputsPerChannel;
+    //#endregion
+
+    //#region // --- RECIPES AND TEXTURES --- //
+    public final ModConfigSpec.BooleanValue expensiveBackupDrive;
+    public final ModConfigSpec.BooleanValue andesiteHub;
+    //#endregion
 
     private CableConfig(ModConfigSpec.Builder builder) {
         shouldConsumeCables = builder
@@ -37,32 +48,49 @@ public class CableConfig {
                 .translation("drivebysable.config.allowCableDisconnect")
                 .define("allowCableDisconnect", false);
 
-        enforceRangeLimit = builder
+        //#region // --- NETWORK CONSTRAINTS --- //
+        builder
                 .comment(
-                        "Whether connections are limited by distance between the source and the output.",
-                        "When false, connections can be made at any distance and rangeLimit is ignored."
+                        "How far connections may reach and how many of them may exist.",
+                        "Raising these costs more memory and may affect loading times."
                 )
-                .translation("drivebysable.config.enforceRangeLimit")
-                .define("enforceRangeLimit", false);
+                .translation("drivebysable.config.networkConstraints")
+                .push("networkConstraints");
+
+        forbidCrossLevelConnections = builder
+                .comment(
+                        "Whether a connection may cross between different levels.",
+                        "When true, both ends must sit in the same place: both loose in the world,",
+                        "or both inside the same sublevel."
+                )
+                .translation("drivebysable.config.forbidCrossLevelConnections")
+                .define("forbidCrossLevelConnections", false);
 
         rangeLimit = builder
                 .comment(
-                        "Furthest a connection may reach, in blocks, when enforceRangeLimit is true.",
+                        "Furthest a connection may reach, in blocks, when rangeLimitEnforced is true.",
                         "Measured as straight line distance between the two block positions.",
                         "0 blocks any connection between separate blocks. Has no effect while",
-                        "enforceRangeLimit is false."
+                        "rangeLimitEnforced is false."
                 )
                 .translation("drivebysable.config.rangeLimit")
                 .defineInRange("rangeLimit", 512, 0, 512);
 
-        maxOutputsPerChannel = builder
+        rangeLimitEnforced = builder
                 .comment(
-                        "How many Outputs a single Channel on one Source may drive.",
-                        "Counted per Source and per Channel, so a Hub with several Channels",
-                        "gets this budget on each of them independently."
+                        "Whether connections are limited by distance between the source and the output.",
+                        "When false, connections can be made at any distance and rangeLimit is ignored."
                 )
-                .translation("drivebysable.config.maxOutputsPerChannel")
-                .defineInRange("maxOutputsPerChannel", 64, 0, 2048);
+                .translation("drivebysable.config.rangeLimitEnforced")
+                .define("rangeLimitEnforced", false);
+
+        maxSourcesInWorld = builder
+                .comment(
+                        "How many distinct Cable Sources may exist loose in the world.",
+                        "Everything outside a sublevel shares this single budget."
+                )
+                .translation("drivebysable.config.maxSourcesInWorld")
+                .defineInRange("maxSourcesInWorld", 128, 0, 2048);
 
         maxSourcesPerSubLevel = builder
                 .comment(
@@ -73,13 +101,47 @@ public class CableConfig {
                 .translation("drivebysable.config.maxSourcesPerSubLevel")
                 .defineInRange("maxSourcesPerSubLevel", 64, 0, 2048);
 
-        maxSourcesInWorld = builder
+        maxOutputsPerChannel = builder
                 .comment(
-                        "How many distinct Cable Sources may exist loose in the world.",
-                        "Everything outside a sublevel shares this single budget."
+                        "How many Outputs a single Channel on one Source may drive.",
+                        "Counted per Source and per Channel, so a Hub with several Channels",
+                        "gets this budget on each of them independently."
                 )
-                .translation("drivebysable.config.maxSourcesInWorld")
-                .defineInRange("maxSourcesInWorld", 128, 0, 2048);
+                .translation("drivebysable.config.maxOutputsPerChannel")
+                .defineInRange("maxOutputsPerChannel", 64, 0, 2048);
+
+        builder.pop();
+        //#endregion
+
+        //#region // --- RECIPES AND TEXTURES --- //
+        builder
+                .comment(
+                        "Alternate recipes and textures for certain blocks.",
+                        "Everything here is reloaded automatically when it changes."
+                )
+                .translation("drivebysable.config.recipesAndTextures")
+                .push("recipesAndTextures");
+
+        expensiveBackupDrive = builder
+                .comment(
+                        "Whether the Network Backup Drive uses its expensive recipe.",
+                        "Recipes are reloaded automatically when this changes."
+                )
+                .translation("drivebysable.config.expensiveBackupDrive")
+                .define("expensiveBackupDrive", false);
+
+        andesiteHub = builder
+                .comment(
+                        "Whether the Cable Hub and Advanced Cable Hub use Andesite and Brass theming.",
+                        "Changes recipes, retextures blocks, and swaps the hub block sounds.",
+                        "On a server, clients may need to enable the resourcepack individually.",
+                        "Recipes and textures are reloaded automatically when this changes."
+                )
+                .translation("drivebysable.config.andesiteHub")
+                .define("andesiteHub", false);
+
+        builder.pop();
+        //#endregion
     }
 
     // * Build config and spec together
