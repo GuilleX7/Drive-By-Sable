@@ -4,6 +4,7 @@ import com.simibubi.create.foundation.item.TooltipHelper;
 import edn.lakeopossmc.drivebysable.blocks.NetworkBackupDriveBlock;
 import net.minecraft.ChatFormatting;
 import net.minecraft.client.gui.screens.Screen;
+import net.minecraft.client.resources.language.I18n;
 import net.minecraft.network.chat.Component;
 import net.minecraft.network.chat.MutableComponent;
 import net.minecraft.network.chat.Style;
@@ -44,5 +45,23 @@ public class NetworkBackupDriveItem extends BlockItem {
 
         final MutableComponent summary = Component.translatable(TOOLTIP_KEY + ".summary");
         TooltipHelper.cutTextComponent(summary, GOLD_DARK, GOLD_LIGHT).forEach(tooltip::add);
+
+        tooltip.add(Component.empty());
+
+        //#region // --- CONDITION AND BEHAVIOUR LINES --- //
+        // * Only show pairs that actually have translations
+        for (int i = 1; i <= 4; i++) {
+            final String conditionKey = TOOLTIP_KEY + ".condition" + i;
+            final String behaviourKey = TOOLTIP_KEY + ".behaviour" + i;
+
+            if (!I18n.exists(conditionKey) || !I18n.exists(behaviourKey)) continue;
+
+            tooltip.add(Component.translatable(conditionKey).withStyle(ChatFormatting.GRAY));
+
+            final MutableComponent behaviour = Component.translatable(behaviourKey);
+            TooltipHelper.cutTextComponent(behaviour, GOLD_DARK, GOLD_LIGHT)
+                    .forEach(line -> tooltip.add(Component.literal("  ").append(line)));
+        }
+        //#endregion
     }
 }
