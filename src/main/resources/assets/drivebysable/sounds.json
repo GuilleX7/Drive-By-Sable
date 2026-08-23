@@ -8,7 +8,7 @@
     "sounds" : [{ "name": "drivebysable:plug_out" }]
   },
   "block.backup_drive.break": {
-    "subtitle": "subtitle.block.generic.break",
+    "subtitle": "subtitles.block.generic.break",
     "sounds": [
       { "name": "drivebysable:block/backup_drive/break1" },
       { "name": "drivebysable:block/backup_drive/break2" },
@@ -17,7 +17,7 @@
     ]
   },
   "block.backup_drive.place": {
-    "subtitle": "subtitle.block.generic.place",
+    "subtitle": "subtitles.block.generic.place",
     "sounds": [
       { "name": "drivebysable:block/backup_drive/place1" },
       { "name": "drivebysable:block/backup_drive/place2" },
@@ -26,7 +26,7 @@
     ]
   },
   "block.backup_drive.step": {
-    "subtitle": "subtitle.block.generic.footsteps",
+    "subtitle": "subtitles.block.generic.footsteps",
     "sounds": [
       { "name": "drivebysable:block/backup_drive/step1" },
       { "name": "drivebysable:block/backup_drive/step2" },
