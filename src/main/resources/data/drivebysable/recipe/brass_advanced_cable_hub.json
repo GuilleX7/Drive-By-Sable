@@ -1,13 +1,13 @@
 {
   "neoforge:conditions": [
-    { "type": "drivebysable:config", "option": "andesite_hub", "expected": false }
+    { "type": "drivebysable:config", "option": "andesite_hub", "expected": true }
   ],
   "type": "minecraft:crafting_shaped",
   "category": "redstone",
   "key": {
     "A": { "item": "create:transmitter" },
     "B": { "item": "drivebysable:cable_io_bus" },
-    "C": { "item": "create:item_vault" },
+    "C": { "item": "create:brass_casing" },
     "D": { "item": "drivebysable:cable" },
     "E": { "item": "create:precision_mechanism" }
   },

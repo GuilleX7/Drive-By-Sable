@@ -1,16 +1,20 @@
 {
+  "neoforge:conditions": [
+    { "type": "drivebysable:config", "option": "expensive_drive", "expected": false }
+  ],
   "type": "minecraft:crafting_shaped",
   "category": "redstone",
   "key": {
-    "A": { "item": "create:transmitter" },
-    "B": { "item": "drivebysable:cable_io_bus" },
-    "C": { "item": "minecraft:quartz" },
-    "D": { "item": "create:empty_schematic" }
+    "A": { "item": "minecraft:obsidian" },
+    "B": { "item": "create:transmitter" },
+    "C": { "item": "drivebysable:cable_io_bus" },
+    "D": { "item": "create:empty_schematic" },
+    "E": { "item": "create:stock_link" }
   },
   "pattern": [
-    "BCB",
-    "ADA",
-    "BCB"
+    "AEA",
+    "BDB",
+    "ACA"
   ],
   "result": { "count": 1, "id": "drivebysable:backup_drive" }
 }
