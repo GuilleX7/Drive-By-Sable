@@ -6,16 +6,23 @@ import edn.lakeopossmc.drivebysable.cable.BackupDriveBounds;
 import net.createmod.catnip.lang.LangBuilder;
 import net.minecraft.ChatFormatting;
 import net.minecraft.client.Minecraft;
+import net.minecraft.client.gui.Font;
 import net.minecraft.core.BlockPos;
 import net.minecraft.network.chat.Component;
 
 import java.util.List;
 
-// --- THE CLIENT HALF OF THE GOGGLE TOOLTIP --- //
+// --- THE CLIENT HALF OF THE DRIVE'S GOGGLE TOOLTIP --- //
 // * Kept apart from the block entity because everything here is client only
 public final class BackupDriveGoggleClient {
 
     private static final String PREFIX = "goggles.";
+
+    private static final String PREFIX_FULL = DriveBySableMod.MOD_ID + "." + PREFIX;
+
+    private static final String[] COUNT_KEYS = {"valid_sources", "partial_sources", "invalid_sources"};
+
+    private static final int COLUMN_GAP = 8;
 
     private BackupDriveGoggleClient() {
     }
@@ -66,15 +73,17 @@ public final class BackupDriveGoggleClient {
             return;
         }
 
-        count(tooltip, "valid_sources", valid, ChatFormatting.GREEN);
+        final int column = widestLabel() + COLUMN_GAP;
+
+        count(tooltip, "valid_sources", valid, ChatFormatting.GREEN, column);
 
         // * Each count brings only explanations that currently apply
-        count(tooltip, "partial_sources", partial, ChatFormatting.GOLD);
+        count(tooltip, "partial_sources", partial, ChatFormatting.GOLD, column);
         if (partial > 0) {
             reason(tooltip, "reason_outputs_outside", ChatFormatting.GOLD);
         }
 
-        count(tooltip, "invalid_sources", invalid, ChatFormatting.RED);
+        count(tooltip, "invalid_sources", invalid, ChatFormatting.RED, column);
         if (unreachable > 0) {
             reason(tooltip, "reason_other_level", ChatFormatting.RED);
         }
@@ -88,18 +97,55 @@ public final class BackupDriveGoggleClient {
         }
     }
 
+    // * How wide the longest of the three labels renders
+    private static int widestLabel() {
+        final Font font = Minecraft.getInstance().font;
+        int widest = 0;
+        for (final String key : COUNT_KEYS) {
+            widest = Math.max(widest, font.width(Component.translatable(PREFIX_FULL + key)));
+        }
+        return widest;
+    }
+
     // * Label then count
     private static void count(
             final List<Component> tooltip,
             final String key,
             final int amount,
-            final ChatFormatting colour
+            final ChatFormatting colour,
+            final int column
     ) {
-        lang(PREFIX + key)
-                .style(ChatFormatting.GRAY)
-                .space()
-                .add(lang(PREFIX + "number", amount).style(colour))
-                .forGoggles(tooltip, 1);
+        final Font font = Minecraft.getInstance().font;
+        final int deficit = column - font.width(Component.translatable(PREFIX_FULL + key));
+
+        final LangBuilder line = lang(PREFIX + key).style(ChatFormatting.GRAY);
+        appendPadding(line, deficit, font);
+
+        line.add(lang(PREFIX + "number", amount).style(colour)).forGoggles(tooltip, 1);
+    }
+
+    private static void appendPadding(final LangBuilder line, final int deficit, final Font font) {
+        if (deficit <= 0) {
+            return;
+        }
+
+        final int plain = Math.max(1, font.width(Component.literal(" ")));
+        final int bold = Math.max(plain + 1, font.width(Component.literal(" ").withStyle(ChatFormatting.BOLD)));
+
+        for (int bolds = 0; bolds <= deficit / bold; bolds++) {
+            final int remainder = deficit - bolds * bold;
+            if (remainder % plain != 0) {
+                continue;
+            }
+
+            if (bolds > 0) {
+                line.add(Component.literal(" ".repeat(bolds)).withStyle(ChatFormatting.BOLD));
+            }
+            line.add(Component.literal(" ".repeat(remainder / plain)));
+            return;
+        }
+
+        line.add(Component.literal(" ".repeat(deficit / plain)));
     }
 
     private static void reason(final List<Component> tooltip, final String key, final ChatFormatting colour) {
