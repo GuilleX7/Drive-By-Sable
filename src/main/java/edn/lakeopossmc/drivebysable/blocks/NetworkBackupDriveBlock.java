@@ -17,7 +17,6 @@ import net.minecraft.world.SimpleMenuProvider;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.phys.BlockHitResult;
 import net.minecraft.world.item.ItemStack;
-import net.minecraft.world.level.LevelReader;
 import net.minecraft.world.level.storage.loot.LootParams;
 import net.minecraft.world.level.storage.loot.parameters.LootContextParams;
 import java.util.List;
@@ -118,21 +117,10 @@ public class NetworkBackupDriveBlock extends Block implements EntityBlock, Speci
 
         for (final ItemStack drop : drops) {
             if (drop.getItem() == asItem()) {
-                drive.writeToItem(drop);
+                drive.writeToItem(drop, params.getLevel().registryAccess());
             }
         }
         return drops;
-    }
-
-    // * Middle click on a saved drive
-    @Override
-    public ItemStack getCloneItemStack(final LevelReader level, final BlockPos pos, final BlockState state) {
-        final ItemStack stack = super.getCloneItemStack(level, pos, state);
-        if (level.getBlockEntity(pos) instanceof final NetworkBackupDriveBlockEntity drive
-                && drive.hasStoredSnapshot()) {
-            drive.writeToItem(stack);
-        }
-        return stack;
     }
     //#endregion
 

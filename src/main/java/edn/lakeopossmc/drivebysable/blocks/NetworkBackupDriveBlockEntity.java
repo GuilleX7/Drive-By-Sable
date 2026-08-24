@@ -16,9 +16,7 @@ import net.minecraft.nbt.Tag;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.level.block.HorizontalDirectionalBlock;
 import net.minecraft.world.level.block.state.BlockState;
-import net.minecraft.core.component.DataComponents;
 import net.minecraft.world.item.ItemStack;
-import net.minecraft.world.item.component.CustomData;
 import net.minecraft.network.Connection;
 import net.minecraft.network.protocol.Packet;
 import net.minecraft.network.protocol.game.ClientGamePacketListener;
@@ -236,14 +234,12 @@ public class NetworkBackupDriveBlockEntity extends BlockEntity implements Partia
     //#endregion
 
     //#region // --- BOUNDED SAVE --- //
-    public void writeToItem(final ItemStack stack) {
+    public void writeToItem(final ItemStack stack, final HolderLookup.Provider registries) {
         if (this.boundedSnapshot == null) {
             return;
         }
 
-        final CompoundTag tag = new CompoundTag();
-        tag.put(BOUNDED_SNAPSHOT_KEY, this.boundedSnapshot.copy());
-        stack.set(DataComponents.BLOCK_ENTITY_DATA, CustomData.of(tag));
+        saveToItem(stack, registries);
     }
 
     // * One cable per stored connection
