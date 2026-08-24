@@ -23,11 +23,20 @@ public final class CableKeyMappings {
             CATEGORY
     );
 
+    // * Opens the channel quick select while a Cable or Cutter is in setup mode
+    public static final KeyMapping CHANNEL_QUICK_SELECT = new KeyMapping(
+            "key.drivebysable.channel_quick_select",
+            InputConstants.Type.KEYSYM,
+            InputConstants.UNKNOWN.getValue(),
+            CATEGORY
+    );
+
     private CableKeyMappings() {
     }
 
     @SubscribeEvent
     public static void onRegisterKeyMappings(final RegisterKeyMappingsEvent event) {
         event.register(HIDE_INACTIVE_CHANNELS);
+        event.register(CHANNEL_QUICK_SELECT);
     }
 }

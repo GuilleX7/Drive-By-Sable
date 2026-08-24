@@ -12,7 +12,9 @@ import edn.lakeopossmc.drivebysable.CableBlocks;
 import edn.lakeopossmc.drivebysable.CableConfig;
 import edn.lakeopossmc.drivebysable.CableItems;
 import edn.lakeopossmc.drivebysable.DriveBySableMod;
+import edn.lakeopossmc.drivebysable.client.screen.ChannelQuickSelectScreen;
 import edn.lakeopossmc.drivebysable.cable.CableNetworkManager;
+import edn.lakeopossmc.drivebysable.mixin.client.MixinGuiOverlayMessageAccessor;
 import edn.lakeopossmc.drivebysable.cable.ModuleSinkTarget;
 import edn.lakeopossmc.drivebysable.cable.MultiChannelCableSource;
 import edn.lakeopossmc.drivebysable.cable.SubTargetCableEndpoint;
@@ -35,6 +37,7 @@ import net.createmod.catnip.theme.Color;
 import net.minecraft.ChatFormatting;
 import net.minecraft.client.KeyMapping;
 import net.minecraft.client.Minecraft;
+import net.minecraft.client.gui.Gui;
 import net.minecraft.client.Options;
 import net.minecraft.client.renderer.MultiBufferSource;
 import net.minecraft.client.renderer.RenderType;
@@ -89,6 +92,21 @@ public final class ClientCableNetworkHandler {
     // * Hover outline colour when the thing under the crosshair is further from the
     // * selected source than the configured range allows
     private static final int OUT_OF_RANGE_COLOR = 0xFF4444;
+
+    private static final String SOURCE_CHANNEL_MESSAGE = "drivebysable.cable.channel.selected";
+    private static final String OUTPUT_CHANNEL_MESSAGE = "drivebysable.cable.output_channel.selected";
+
+    // * Keeps the persistent channel readout off the action bar for a moment so errors
+    // * and toggles are not overwritten by the next tick's redraw
+    private static final int MESSAGE_HOLD_TICKS = 60;
+
+    // * Matches CableHoverTip.FADE_GRACE_TICKS. Gui fades over its last twenty ticks, so
+    // * this both starts the fade and sets its length
+    private static final int READOUT_FADE_TICKS = 15;
+    private static int messageHoldTicks;
+
+    // * Whether the action bar is currently ours, so it is only cleared once on exit
+    private static boolean showingChannelReadout;
     // * Module boxes take their thickness from RenderType.lines
 
     private static Map<Long, Map<String, Set<CableNetworkSink>>> currentNetwork = EMPTY_NETWORK;
@@ -237,6 +255,7 @@ public final class ClientCableNetworkHandler {
             }
 
             hideInactiveChannels = !hideInactiveChannels;
+            messageHoldTicks = MESSAGE_HOLD_TICKS;
             player.displayClientMessage(
                     Component.translatable(
                             "drivebysable.cable_actions.inactive_channels",
@@ -262,6 +281,14 @@ public final class ClientCableNetworkHandler {
                     1.0F,
                     false
             );
+        }
+
+        // * Setup mode only: without a selected source there is no channel list to offer
+        while (CableKeyMappings.CHANNEL_QUICK_SELECT.consumeClick()) {
+            if (!holdingCableTool || selectedSource == null) {
+                continue;
+            }
+            openChannelQuickSelect(player);
         }
 
         // * Clipboard needed for the empty source copy check
@@ -299,6 +326,7 @@ public final class ClientCableNetworkHandler {
         if (!holdingCableTool) {
             moduleOutlines.clear();
             CableHoverTip.clear();
+            clearChannelReadout();
             return;
         }
 
@@ -308,6 +336,17 @@ public final class ClientCableNetworkHandler {
             showCableHoverTip(minecraft, level, player);
         } else if (mainHand.is(CableItems.CABLE_CUTTER.get())) {
             showCableCutterHoverTip(minecraft, level, player);
+        }
+
+        if (messageHoldTicks > 0) {
+            messageHoldTicks--;
+        } else if (selectedSource != null) {
+            player.displayClientMessage(armedSinkModule != null
+                    ? channelMessage(OUTPUT_CHANNEL_MESSAGE, armedSinkChannel)
+                    : channelMessage(SOURCE_CHANNEL_MESSAGE, currentChannel), true);
+            showingChannelReadout = true;
+        } else {
+            clearChannelReadout();
         }
 
         // * Rebuilt from scratch each tick
@@ -395,6 +434,12 @@ public final class ClientCableNetworkHandler {
         }
 
         if (selectedSource == null) {
+            // * A module that cannot act as a Source is refused
+            final String subTarget = pickSubTarget(level, pos, player);
+            if (subTarget != null && !isSourceSubTarget(level, pos, subTarget)) {
+                return true;
+            }
+
             return CableNetworkManager.wouldExceedSourceLimit(level, pos);
         }
 
@@ -726,7 +771,7 @@ public final class ClientCableNetworkHandler {
         final List<String> connected = connectedSinkChannels(level, pos, subTarget);
         armedSinkChannel = connected.isEmpty() ? channels.getFirst() : connected.getFirst();
 
-        announceChannel(player, "drivebysable.cable.output_channel.selected", armedSinkChannel);
+        announceChannel(player, OUTPUT_CHANNEL_MESSAGE, armedSinkChannel);
     }
 
     private static void changeArmedSinkChannel(final Level level, final Player player, final boolean forward) {
@@ -740,7 +785,7 @@ public final class ClientCableNetworkHandler {
         }
 
         armedSinkChannel = next;
-        announceChannel(player, "drivebysable.cable.output_channel.selected", armedSinkChannel);
+        announceChannel(player, OUTPUT_CHANNEL_MESSAGE, armedSinkChannel);
     }
 
     // * Channels on this module
@@ -835,6 +880,7 @@ public final class ClientCableNetworkHandler {
     //#region // --- INVALID OP FLASH MESSAGE --- //
     // * Display message in red, then flash white
     public static void showInvalidOperationMessage(final Player player, final String langKey) {
+        messageHoldTicks = MESSAGE_HOLD_TICKS;
         player.displayClientMessage(Component.translatable(langKey).withStyle(ChatFormatting.RED), true);
         scheduledFlashes.add(new ScheduledFlash(2, () -> {
             player.displayClientMessage(Component.translatable(langKey).withStyle(ChatFormatting.WHITE), true);
@@ -881,9 +927,15 @@ public final class ClientCableNetworkHandler {
                 return;
             }
 
-            // * Say the cap is reached
             final BlockPos entryPos = ((BlockHitResult) hitResult).getBlockPos();
-            if (CableNetworkManager.wouldExceedSourceLimit(level, entryPos)) {
+            final String entryModule = pickSubTarget(level, entryPos, player);
+
+            // * Matches the not_a_source refusal, shown before the click rather than after
+            if (entryModule != null && !isSourceSubTarget(level, entryPos, entryModule)) {
+                tip.add(Component.translatable("drivebysable.cable_actions.invalid_module")
+                        .withStyle(net.minecraft.ChatFormatting.RED));
+            } else if (CableNetworkManager.wouldExceedSourceLimit(level, entryPos)) {
+                // * Say the cap is reached
                 tip.add(Component.translatable("drivebysable.cable_actions.source_limit_reached")
                         .withStyle(net.minecraft.ChatFormatting.RED));
             } else {
@@ -1123,15 +1175,79 @@ public final class ClientCableNetworkHandler {
 
         final Player player = Minecraft.getInstance().player;
         if (player != null) {
-            announceChannel(player, "drivebysable.cable.channel.selected", currentChannel);
+            announceChannel(player, SOURCE_CHANNEL_MESSAGE, currentChannel);
+        }
+    }
+
+    private static void clearChannelReadout() {
+        if (!showingChannelReadout) {
+            return;
+        }
+
+        showingChannelReadout = false;
+
+        final Gui gui = Minecraft.getInstance().gui;
+        if (gui instanceof final MixinGuiOverlayMessageAccessor accessor) {
+            accessor.drivebysable$setOverlayMessageTime(READOUT_FADE_TICKS);
         }
     }
 
     // * Look up display name, fall back to raw channel id
     private static void announceChannel(final Player player, final String messageKey, final String channel) {
-        final String langKey = TweakedControllerCableServerHandler.CHANNEL_TO_LANG_KEY.getOrDefault(channel, channel);
-        player.displayClientMessage(Component.translatable(messageKey, Component.translatable(langKey)), true);
+        player.displayClientMessage(channelMessage(messageKey, channel), true);
     }
+
+    private static Component channelMessage(final String messageKey, final String channel) {
+        final String langKey = TweakedControllerCableServerHandler.CHANNEL_TO_LANG_KEY.getOrDefault(channel, channel);
+        final int channelColor = messageKey.equals(OUTPUT_CHANNEL_MESSAGE)
+                ? LineColor.SINK.SELECTED.getColor()
+                : LineColor.SOURCE.SELECTED.getColor();
+
+        return Component.translatable(
+                        messageKey,
+                        Component.translatable(langKey).withStyle(style -> style.withColor(channelColor)))
+                .withStyle(ChatFormatting.GRAY);
+    }
+
+    //#region // --- CHANNEL QUICK SELECT --- //
+    private static void openChannelQuickSelect(final Player player) {
+        final Level level = player.level();
+        final boolean forOutput = armedSinkModule != null && armedSinkPos != null;
+
+        final List<String> ids = forOutput
+                ? sinkChannelsFor(level, armedSinkPos, armedSinkModule)
+                : level.getBlockState(selectedSource).getBlock() instanceof final MultiChannelCableSource channelSource
+                ? channelSource.cable$getChannels(level, selectedSource, selectedSourceModule)
+                : List.of();
+
+        // * Silently does nothing when there is nothing
+        if (ids.size() <= 1) {
+            return;
+        }
+
+        final List<ChannelQuickSelectScreen.Channel> entries = new ArrayList<>(ids.size());
+        for (final String id : ids) {
+            entries.add(new ChannelQuickSelectScreen.Channel(id, displayNameOf(id)));
+        }
+
+        final String current = forOutput ? armedSinkChannel : currentChannel;
+
+        Minecraft.getInstance().setScreen(new ChannelQuickSelectScreen(entries, current, chosen -> {
+            if (forOutput) {
+                armedSinkChannel = chosen;
+                announceChannel(player, OUTPUT_CHANNEL_MESSAGE, chosen);
+            } else {
+                currentChannel = chosen;
+                announceChannel(player, SOURCE_CHANNEL_MESSAGE, chosen);
+            }
+        }));
+    }
+
+    private static String displayNameOf(final String channel) {
+        final String langKey = TweakedControllerCableServerHandler.CHANNEL_TO_LANG_KEY.getOrDefault(channel, channel);
+        return Component.translatable(langKey).getString();
+    }
+    //#endregion
 
     //#region // --- DRAW ALL NETWORK OUTLINES --- //
     // * Selected source gets full connection detail
