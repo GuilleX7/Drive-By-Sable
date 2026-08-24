@@ -43,6 +43,7 @@
   "drivebysable.cable_actions.add_output": "%s, aby dodać Wyjście",
   "drivebysable.cable_actions.out_of_range": "Poza zasięgiem",
   "drivebysable.cable_actions.module_required": "Wyceluj w Moduł",
+  "drivebysable.cable_actions.invalid_module": "Wyceluj w prawidłowy Moduł",
   "drivebysable.cable_actions.cross_level": "Połączenie międzypoziomowe zablokowane",
   "drivebysable.cable_actions.source_limit_reached": "Osiągnięto limit Źródeł",
   "drivebysable.cable_actions.output_limit_reached": "Osiągnięto limit Wyjść na tym Kanale",
@@ -184,6 +185,14 @@
   "drivebysable.config.andesiteHub": "Andezytowy Koncentrator Kabli",
   "drivebysable.pack.andesite_hub": "Andezytowy Koncentrator Kabli",
   "key.drivebysable.hide_inactive_channels": "Ukryj Połączenia Nieaktywnych Kanałów",
+  "key.drivebysable.channel_quick_select": "Szybki Wybór Kanału",
+
+  "drivebysable.channel_select.title": "Szybki Wybór Kanału",
+  "drivebysable.channel_select.well": "Podłącz Wyjście do...",
+  "drivebysable.channel_select.well_tip": "Wpisz nazwę Kanału, z którym chcesz się połączyć.",
+  "drivebysable.channel_select.well_hint": "Kliknij LPM, aby edytować",
+  "drivebysable.channel_select.confirm": "Zapisz i Zamknij",
+  "drivebysable.channel_select.invalid": "Nieprawidłowy Kanał",
 
   "drivebysable.backup_drive.save": "Zapisz dane Sieci na Dysku",
   "drivebysable.backup_drive.save_done": "Dane Sieci zapisane na Dysku",

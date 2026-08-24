@@ -43,6 +43,7 @@
   "drivebysable.cable_actions.add_output": "%s 添加输出",
   "drivebysable.cable_actions.out_of_range": "超出范围",
   "drivebysable.cable_actions.module_required": "请瞄准模块",
+  "drivebysable.cable_actions.invalid_module": "必须瞄准有效的模块",
   "drivebysable.cable_actions.cross_level": "跨层级连接已被阻止",
   "drivebysable.cable_actions.source_limit_reached": "已达源数量上限",
   "drivebysable.cable_actions.output_limit_reached": "此通道的输出数量已达上限",
@@ -184,6 +185,14 @@
   "drivebysable.config.andesiteHub": "安山岩电缆集线器",
   "drivebysable.pack.andesite_hub": "安山岩电缆集线器",
   "key.drivebysable.hide_inactive_channels": "隐藏未激活通道连接",
+  "key.drivebysable.channel_quick_select": "通道快速选择",
+
+  "drivebysable.channel_select.title": "通道快速选择",
+  "drivebysable.channel_select.well": "将输出连接到…",
+  "drivebysable.channel_select.well_tip": "输入要连接的通道名称。",
+  "drivebysable.channel_select.well_hint": "左键点击以编辑",
+  "drivebysable.channel_select.confirm": "保存并关闭",
+  "drivebysable.channel_select.invalid": "无效的通道",
 
   "drivebysable.backup_drive.save": "将网络数据保存到驱动器",
   "drivebysable.backup_drive.save_done": "网络数据已保存到驱动器",
