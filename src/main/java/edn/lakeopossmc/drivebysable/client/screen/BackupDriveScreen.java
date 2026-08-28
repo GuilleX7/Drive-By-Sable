@@ -326,7 +326,9 @@ public class BackupDriveScreen extends AbstractSimiContainerScreen<BackupDriveMe
             BackupDrivePreview.show(
                     minecraft.level,
                     menu.getDrivePos(),
-                    BackupDrivePreview.boundsFor(menu.getDrivePos(), offset, size, rotationIndex)
+                    offset,
+                    size,
+                    rotationIndex
             );
         }
     }
@@ -748,7 +750,9 @@ public class BackupDriveScreen extends AbstractSimiContainerScreen<BackupDriveMe
             BackupDrivePreview.show(
                     minecraft.level,
                     menu.getDrivePos(),
-                    BackupDrivePreview.boundsFor(menu.getDrivePos(), offset, size, rotationIndex)
+                    offset,
+                    size,
+                    rotationIndex
             );
         }
 

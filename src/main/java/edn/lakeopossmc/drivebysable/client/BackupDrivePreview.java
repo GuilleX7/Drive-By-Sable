@@ -13,6 +13,7 @@ import edn.lakeopossmc.drivebysable.network.CableNetworkRequestSyncPacket;
 import net.createmod.catnip.outliner.Outliner;
 import net.minecraft.client.Minecraft;
 import net.minecraft.core.BlockPos;
+import net.minecraft.core.Direction;
 import net.minecraft.resources.ResourceKey;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.phys.AABB;
@@ -76,10 +77,27 @@ public final class BackupDrivePreview {
     private static AABB cachedWorldBox;
 
     // * One preview per drive keyed by position
-    private record Preview(AABB box, ResourceKey<Level> dimension) {
+    // * The raw region is kept alongside the box
+    private record Preview(AABB box, ResourceKey<Level> dimension, int[] offset, int[] size, int rotationSteps) {
     }
 
     private static final Map<BlockPos, Preview> previews = new LinkedHashMap<>();
+
+    // * The face under the crosshair
+    // * Null for every drive not currently being aimed at
+    private static final Map<BlockPos, Direction> highlightedFaces = new LinkedHashMap<>();
+
+    public static void setHighlightedFace(final BlockPos drivePos, final Direction face) {
+        if (face == null) {
+            highlightedFaces.remove(drivePos);
+        } else {
+            highlightedFaces.put(drivePos, face);
+        }
+    }
+
+    public static void clearHighlightedFaces() {
+        highlightedFaces.clear();
+    }
 
     private static final int RESYNC_INTERVAL = 20;
     private static int resyncCountdown;
@@ -87,10 +105,58 @@ public final class BackupDrivePreview {
     private BackupDrivePreview() {
     }
 
-    public static void show(final Level level, final BlockPos drivePos, final AABB box) {
-        previews.put(drivePos.immutable(), new Preview(box, level.dimension()));
-        resyncCountdown = RESYNC_INTERVAL;
+    public static void show(
+            final Level level,
+            final BlockPos drivePos,
+            final int[] offset,
+            final int[] size,
+            final int rotationSteps
+    ) {
+        previews.put(drivePos, new Preview(
+                boundsFor(drivePos, offset, size, rotationSteps),
+                level.dimension(),
+                offset.clone(),
+                size.clone(),
+                rotationSteps
+        ));
     }
+
+    //#region // --- REGION ACCESS FOR IN WORLD RESIZING --- //
+    public static boolean isActive(final BlockPos drivePos, final Level level) {
+        final Preview preview = previews.get(drivePos);
+        return preview != null && preview.dimension().equals(level.dimension());
+    }
+
+    public static AABB boxFor(final BlockPos drivePos) {
+        final Preview preview = previews.get(drivePos);
+        return preview == null ? null : preview.box();
+    }
+
+    public static int[] offsetFor(final BlockPos drivePos) {
+        final Preview preview = previews.get(drivePos);
+        return preview == null ? null : preview.offset().clone();
+    }
+
+    public static int[] sizeFor(final BlockPos drivePos) {
+        final Preview preview = previews.get(drivePos);
+        return preview == null ? null : preview.size().clone();
+    }
+
+    public static int rotationFor(final BlockPos drivePos) {
+        final Preview preview = previews.get(drivePos);
+        return preview == null ? 0 : preview.rotationSteps();
+    }
+
+    public static Vec3 toDriveSpace(final Level level, final BlockPos drivePos, final Vec3 worldPoint) {
+        final SubLevel subLevel = BackupDriveCapture.subLevelOf(level, drivePos);
+        return subLevel == null ? worldPoint : subLevel.logicalPose().transformPositionInverse(worldPoint);
+    }
+
+    public static java.util.Set<BlockPos> activeDrives() {
+        return java.util.Set.copyOf(previews.keySet());
+    }
+    //#endregion
+
 
     // * One drive's preview
     public static void clear(final BlockPos drivePos) {
@@ -209,9 +275,10 @@ public final class BackupDrivePreview {
             }
 
             Outliner.getInstance()
-                    .showAABB(OUTLINE_SLOT + drive.asLong(), preview.box())
+                    .chaseAABB(OUTLINE_SLOT + drive.asLong(), preview.box())
                     .colored(OUTLINE_COLOR)
                     .lineWidth(OUTLINE_LINE_WIDTH)
+                    .highlightFace(highlightedFaces.get(drive))
                     .withFaceTexture(AllSpecialTextures.CHECKERED);
 
             showSourceOutlines(minecraft.level, drive, preview.box());
