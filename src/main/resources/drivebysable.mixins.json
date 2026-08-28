@@ -4,6 +4,7 @@
   "compatibilityLevel": "JAVA_21",
   "mixins": [
     "MixinServerLevel",
+    "MixinDiodeBlock",
     "compat.aeronautics.MixinWheelMountBlockEntity",
     "compat.MixinSubLevelAssemblyHelper",
     "compat.MixinLecternControllerBlock",

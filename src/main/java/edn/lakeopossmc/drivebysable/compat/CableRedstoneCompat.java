@@ -12,6 +12,11 @@ public final class CableRedstoneCompat {
     private CableRedstoneCompat() {
     }
 
+    // * Cable signal delivered onto one face of a block
+    public static int cableSignalOnFace(final Level level, final BlockPos pos, final Direction face) {
+        return CableNetworkManager.get(level).getSignalAt(pos, face);
+    }
+
     // * Sink lookup for the vanilla convention
     public static int cableSignalForForwardQuery(
             final Level level,
