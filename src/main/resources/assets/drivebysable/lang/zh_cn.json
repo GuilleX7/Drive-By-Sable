@@ -4,6 +4,7 @@
   "key.categories.drivebysable": "Drive-By-Sable",
 
   "block.drivebysable.backup_drive": "网络备份驱动器",
+  "block.drivebysable.network_anchor": "网络锚点",
   "block.drivebysable.cable_hub": "电缆集线器",
   "block.drivebysable.advanced_cable_hub": "高级电缆集线器",
   "block.drivebysable.cable_typewriter_hub": "打字机电缆集线器",
@@ -173,6 +174,7 @@
 
   "drivebysable.config.networkConstraints": "网络限制",
   "drivebysable.config.recipesAndTextures": "配方与材质",
+  "drivebysable.config.extensions": "扩展",
   "drivebysable.config.shouldConsumeCables": "消耗电缆",
   "drivebysable.config.allowCableDisconnect": "允许电缆断开连接",
   "drivebysable.config.rangeLimitEnforced": "启用范围限制",
@@ -184,6 +186,7 @@
   "drivebysable.config.expensiveBackupDrive": "昂贵的备份驱动器配方",
   "drivebysable.config.andesiteHub": "安山岩电缆集线器",
   "drivebysable.pack.andesite_hub": "安山岩电缆集线器",
+  "drivebysable.config.networkAnchor": "网络锚点",
   "key.drivebysable.hide_inactive_channels": "隐藏未激活通道连接",
   "key.drivebysable.channel_quick_select": "通道快速选择",
 
@@ -226,6 +229,20 @@
   "drivebysable.backup_drive.rotation_90": "顺时针 90°",
   "drivebysable.backup_drive.rotation_180": "顺时针 180°",
   "drivebysable.backup_drive.rotation_270": "顺时针 270°",
+
+  "drivebysable.network_anchor.radius": "捕获半径",
+  "drivebysable.network_anchor.radius_row": "方块",
+  "drivebysable.network_anchor.saved": "网络数据已保存",
+  "drivebysable.network_anchor.saved_radius": "半径：%s",
+  "drivebysable.network_anchor.saved_sources": "源：%s",
+  "drivebysable.network_anchor.saved_outputs": "输出：%s",
+  "drivebysable.network_anchor.rejected_outputs": "%s 个输出未保存：超出半径",
+  "drivebysable.network_anchor.rejected_sources": "%s 个源未保存：必须与锚点处于同一层级",
+  "drivebysable.network_anchor.rejected_outputs_level": "%s 个输出未保存：必须与锚点处于同一层级",
+  "drivebysable.network_anchor.loaded": "网络数据已加载",
+  "drivebysable.network_anchor.missing_sources": "%s 个源未加载：预期位置缺少源",
+  "drivebysable.network_anchor.missing_outputs": "%s 个输出未加载：预期位置缺少输出",
+  "drivebysable.network_anchor.cleared": "网络数据已清除",
 
   "drivebysable.goggles.title": "网络备份驱动器： ",
   "drivebysable.goggles.idle": "空闲",

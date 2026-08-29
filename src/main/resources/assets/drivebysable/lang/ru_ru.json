@@ -4,6 +4,7 @@
   "key.categories.drivebysable": "Drive-By-Sable",
 
   "block.drivebysable.backup_drive": "Сетевое хранилище",
+  "block.drivebysable.network_anchor": "Сетевой якорь",
   "block.drivebysable.cable_hub": "Кабельный хаб",
   "block.drivebysable.advanced_cable_hub": "Продвинутый кабельный хаб",
   "block.drivebysable.cable_typewriter_hub": "Продвинутая пишущая машинка",
@@ -173,6 +174,7 @@
 
   "drivebysable.config.networkConstraints": "Ограничения сети",
   "drivebysable.config.recipesAndTextures": "Рецепты и текстуры",
+  "drivebysable.config.extensions": "Расширения",
   "drivebysable.config.shouldConsumeCables": "Расходовать кабели",
   "drivebysable.config.allowCableDisconnect": "Разрешить отключение кабелем",
   "drivebysable.config.rangeLimitEnforced": "Ограничение радиуса включено",
@@ -184,6 +186,7 @@
   "drivebysable.config.expensiveBackupDrive": "Дорогой рецепт сетевого хранилища",
   "drivebysable.config.andesiteHub": "Андезитовый кабельный хаб",
   "drivebysable.pack.andesite_hub": "Андезитовый кабельный хаб",
+  "drivebysable.config.networkAnchor": "Сетевой якорь",
   "key.drivebysable.hide_inactive_channels": "Скрыть соединения неактивных каналов",
   "key.drivebysable.channel_quick_select": "Быстрый выбор канала",
 
@@ -226,6 +229,20 @@
   "drivebysable.backup_drive.rotation_90": "По часовой стрелке 90°",
   "drivebysable.backup_drive.rotation_180": "По часовой стрелке 180°",
   "drivebysable.backup_drive.rotation_270": "По часовой стрелке 270°",
+
+  "drivebysable.network_anchor.radius": "Радиус захвата",
+  "drivebysable.network_anchor.radius_row": "Блоки",
+  "drivebysable.network_anchor.saved": "Данные сети сохранены",
+  "drivebysable.network_anchor.saved_radius": "Радиус: %s",
+  "drivebysable.network_anchor.saved_sources": "Источники: %s",
+  "drivebysable.network_anchor.saved_outputs": "Выходы: %s",
+  "drivebysable.network_anchor.rejected_outputs": "Не сохранено выходов: %s — вне радиуса",
+  "drivebysable.network_anchor.rejected_sources": "Не сохранено источников: %s — должны быть на одном уровне с якорем",
+  "drivebysable.network_anchor.rejected_outputs_level": "Не сохранено выходов: %s — должны быть на одном уровне с якорем",
+  "drivebysable.network_anchor.loaded": "Данные сети загружены",
+  "drivebysable.network_anchor.missing_sources": "Не загружено источников: %s — отсутствуют в ожидаемых местах",
+  "drivebysable.network_anchor.missing_outputs": "Не загружено выходов: %s — отсутствуют в ожидаемых местах",
+  "drivebysable.network_anchor.cleared": "Данные сети очищены",
 
   "drivebysable.goggles.title": "Сетевое хранилище: ",
   "drivebysable.goggles.idle": "Бездействие",
