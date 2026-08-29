@@ -1,6 +1,7 @@
 package edn.lakeopossmc.drivebysable;
 
 import dev.simulated_team.simulated.registrate.SimulatedRegistrate;
+import edn.lakeopossmc.drivebysable.items.NetworkAnchorItem;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.item.Item;
@@ -23,6 +24,10 @@ public final class CableSimulatedTab {
             addItem(CableItems.CABLE_TYPEWRITER_HUB.get());
         }
         addItem(CableItems.BACKUP_DRIVE.get());
+
+        if (NetworkAnchorItem.isExtensionEnabled()) {
+            addItem(CableItems.NETWORK_ANCHOR.get());
+        }
     }
 
     private static void addItem(final Item item) {

@@ -626,6 +626,32 @@ public final class CableNetworkManager {
         return sources.size();
     }
 
+    public Map<BlockPos, Map<String, Set<CableNetworkSink>>> sourcesWithSinks() {
+        final Map<BlockPos, Map<String, Set<CableNetworkSink>>> result = new LinkedHashMap<>();
+        for (final Map.Entry<Long, Map<String, Set<CableNetworkSink>>> entry : sinks.entrySet()) {
+            result.put(BlockPos.of(entry.getKey()), entry.getValue());
+        }
+        return result;
+    }
+
+    public static Map<BlockPos, Set<String>> storedSourceModules(final CompoundTag snapshot, final BlockPos origin) {
+        final Map<BlockPos, Set<String>> sources = new LinkedHashMap<>();
+        if (snapshot == null || !snapshot.contains(CONNECTIONS_KEY, Tag.TAG_LIST)) {
+            return sources;
+        }
+
+        for (final Tag entry : snapshot.getList(CONNECTIONS_KEY, Tag.TAG_COMPOUND)) {
+            if (!(entry instanceof final CompoundTag connection) || !isReadable(connection)) {
+                continue;
+            }
+
+            final BlockPos source = origin.offset(BlockPos.of(connection.getLong(SOURCE_KEY)));
+            sources.computeIfAbsent(source, key -> new LinkedHashSet<>())
+                    .add(connection.getString(SOURCE_MODULE_KEY));
+        }
+        return sources;
+    }
+
     public static int countConnectionsForSubTarget(final Level level, final BlockPos pos, final String subTarget) {
         return get(level).countConnectionsForSubTargetInternal(level, pos, subTarget);
     }

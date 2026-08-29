@@ -4,6 +4,7 @@ import edn.lakeopossmc.drivebysable.items.CableCutterItem;
 import edn.lakeopossmc.drivebysable.items.CableItem;
 import edn.lakeopossmc.drivebysable.items.CableTypewriterHubItem;
 import edn.lakeopossmc.drivebysable.items.NetworkBackupDriveItem;
+import edn.lakeopossmc.drivebysable.items.NetworkAnchorItem;
 import net.minecraft.world.item.BlockItem;
 import net.minecraft.world.item.Item;
 import net.neoforged.bus.api.IEventBus;
@@ -29,6 +30,10 @@ public final class CableItems {
             () -> new NetworkBackupDriveItem(CableBlocks.BACKUP_DRIVE.get(), new Item.Properties())
     );
     public static final DeferredItem<BlockItem> CABLE_HUB_BLOCK = ITEMS.registerSimpleBlockItem("cable_hub", CableBlocks.CABLE_HUB);
+    public static final DeferredItem<BlockItem> NETWORK_ANCHOR = ITEMS.register(
+            "network_anchor",
+            () -> new NetworkAnchorItem(CableBlocks.NETWORK_ANCHOR.get(), new Item.Properties())
+    );
 
     // * Null when tweaked controllers isnt loaded
     @Nullable

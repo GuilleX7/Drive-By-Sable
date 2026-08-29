@@ -20,6 +20,7 @@ public final class CablePackets {
                 .playToServer(BackupDriveLoadPacket.TYPE, BackupDriveLoadPacket.STREAM_CODEC, BackupDriveLoadPacket::handle)
                 .playToClient(BackupDriveLoadReportPacket.TYPE, BackupDriveLoadReportPacket.STREAM_CODEC, BackupDriveLoadReportPacket::handle)
                 .playToClient(BackupDriveHighlightPacket.TYPE, BackupDriveHighlightPacket.STREAM_CODEC, BackupDriveHighlightPacket::handle)
+                .playToClient(NetworkAnchorSavedPacket.TYPE, NetworkAnchorSavedPacket.STREAM_CODEC, NetworkAnchorSavedPacket::handle)
                 .playToServer(CableTypewriterHubKeyPacket.TYPE, CableTypewriterHubKeyPacket.STREAM_CODEC, CableTypewriterHubKeyPacket::handle)
                 .playToServer(MovementKeybindsPacket.TYPE, MovementKeybindsPacket.STREAM_CODEC, MovementKeybindsPacket::handle)
                 .playToServer(TweakedKeybindsPacket.TYPE, TweakedKeybindsPacket.STREAM_CODEC, TweakedKeybindsPacket::handle);

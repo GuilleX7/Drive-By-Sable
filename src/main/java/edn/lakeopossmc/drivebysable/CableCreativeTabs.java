@@ -1,5 +1,6 @@
 package edn.lakeopossmc.drivebysable;
 
+import edn.lakeopossmc.drivebysable.items.NetworkAnchorItem;
 import net.minecraft.core.registries.Registries;
 import net.minecraft.network.chat.Component;
 import net.minecraft.world.item.CreativeModeTab;
@@ -26,6 +27,9 @@ public final class CableCreativeTabs {
                         output.accept(CableItems.CABLE_CUTTER.get());
                         output.accept(CableItems.BACKUP_DRIVE.get());
                         output.accept(CableItems.CABLE_HUB_BLOCK.get());
+                        if (NetworkAnchorItem.isExtensionEnabled()) {
+                            output.accept(CableItems.NETWORK_ANCHOR.get());
+                        }
                         if (ModList.get().isLoaded("create_tweaked_controllers")) {
                             output.accept(CableItems.ADVANCED_CABLE_HUB_BLOCK.get());
                         }

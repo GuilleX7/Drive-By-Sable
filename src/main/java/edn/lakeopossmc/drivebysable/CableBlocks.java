@@ -3,6 +3,7 @@ package edn.lakeopossmc.drivebysable;
 import edn.lakeopossmc.drivebysable.blocks.AdvancedCableHubBlock;
 import edn.lakeopossmc.drivebysable.blocks.CableHubBlock;
 import edn.lakeopossmc.drivebysable.blocks.CableTypewriterHubBlock;
+import edn.lakeopossmc.drivebysable.blocks.NetworkAnchorBlock;
 import edn.lakeopossmc.drivebysable.blocks.NetworkBackupDriveBlock;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.resources.ResourceLocation;
@@ -31,6 +32,16 @@ public final class CableBlocks {
                     .strength(3.0F, 6.0F)
                     .requiresCorrectToolForDrops())
     );
+    // * Creative only
+    public static final DeferredBlock<NetworkAnchorBlock> NETWORK_ANCHOR = BLOCKS.register(
+            "network_anchor",
+            () -> new NetworkAnchorBlock(BlockBehaviour.Properties.of()
+                    .mapColor(MapColor.COLOR_PURPLE)
+                    .sound(SoundType.NETHERITE_BLOCK)
+                    .strength(-1.0F, Float.MAX_VALUE)
+                    .noLootTable())
+    );
+
     public static final DeferredBlock<CableHubBlock> CABLE_HUB = BLOCKS.register(
             "cable_hub",
             () -> new CableHubBlock(BlockBehaviour.Properties.of()

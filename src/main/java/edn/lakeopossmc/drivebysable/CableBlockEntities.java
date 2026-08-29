@@ -2,6 +2,7 @@ package edn.lakeopossmc.drivebysable;
 
 import edn.lakeopossmc.drivebysable.blocks.CableHubBlockEntity;
 import edn.lakeopossmc.drivebysable.blocks.CableTypewriterHubBlockEntity;
+import edn.lakeopossmc.drivebysable.blocks.NetworkAnchorBlockEntity;
 import edn.lakeopossmc.drivebysable.blocks.NetworkBackupDriveBlockEntity;
 import net.minecraft.core.registries.Registries;
 import net.minecraft.world.level.block.Block;
@@ -39,6 +40,12 @@ public final class CableBlockEntities {
             "backup_drive",
             () -> BlockEntityType.Builder.of(NetworkBackupDriveBlockEntity::new, CableBlocks.BACKUP_DRIVE.get()).build(null)
     );
+
+    public static final DeferredHolder<BlockEntityType<?>, BlockEntityType<NetworkAnchorBlockEntity>> NETWORK_ANCHOR =
+            BLOCK_ENTITY_TYPES.register(
+                    "network_anchor",
+                    () -> BlockEntityType.Builder.of(NetworkAnchorBlockEntity::new, CableBlocks.NETWORK_ANCHOR.get()).build(null)
+            );
 
     // * Null when simulated isnt loaded
     @Nullable

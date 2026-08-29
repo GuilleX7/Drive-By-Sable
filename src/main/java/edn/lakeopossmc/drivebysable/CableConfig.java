@@ -23,6 +23,10 @@ public class CableConfig {
     public final ModConfigSpec.IntValue maxOutputsPerChannel;
     //#endregion
 
+    //#region // --- EXTENSIONS --- //
+    public final ModConfigSpec.BooleanValue networkAnchor;
+    //#endregion
+
     //#region // --- RECIPES AND TEXTURES --- //
     public final ModConfigSpec.BooleanValue expensiveBackupDrive;
     public final ModConfigSpec.BooleanValue andesiteHub;
@@ -109,6 +113,28 @@ public class CableConfig {
                 )
                 .translation("drivebysable.config.maxOutputsPerChannel")
                 .defineInRange("maxOutputsPerChannel", 64, 0, 2048);
+
+        builder.pop();
+        //#endregion
+
+        //#region // --- EXTENSIONS --- //
+        builder
+                .comment(
+                        "Optional blocks that act as extensions of existing features.",
+                        "Disabling one makes it unobtainable, including through /give."
+                )
+                .translation("drivebysable.config.extensions")
+                .push("extensions");
+
+        networkAnchor = builder
+                .comment(
+                        "Whether the Network Anchor is available.",
+                        "A creative only block that stores connections within a radius and",
+                        "restores them wherever it is pasted.",
+                        "Existing Anchors already placed in a world are unaffected."
+                )
+                .translation("drivebysable.config.networkAnchor")
+                .define("networkAnchor", false);
 
         builder.pop();
         //#endregion
