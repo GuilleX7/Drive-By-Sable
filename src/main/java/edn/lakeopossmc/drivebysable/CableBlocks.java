@@ -29,7 +29,7 @@ public final class CableBlocks {
             () -> new NetworkBackupDriveBlock(BlockBehaviour.Properties.of()
                     .mapColor(MapColor.TERRACOTTA_BLACK)
                     .sound(CableSounds.backupDriveSoundType())
-                    .strength(3.0F, 6.0F)
+                    .strength(50.0F, 1200.0F)
                     .requiresCorrectToolForDrops())
     );
     // * Creative only
