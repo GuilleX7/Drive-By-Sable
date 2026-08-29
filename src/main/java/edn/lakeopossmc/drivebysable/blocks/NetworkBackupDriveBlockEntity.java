@@ -48,6 +48,10 @@ public class NetworkBackupDriveBlockEntity extends BlockEntity implements Partia
     private static final String CABLE_NETWORK_KEY = "CableNetwork";
     private static final String BOUNDED_SNAPSHOT_KEY = "BoundedSnapshot";
 
+    private static final int SOURCE_COLOR = 0x7FCDE0;
+    private static final int OUTPUT_COLOR = 0xDDC166;
+    private static final int CABLE_COST_COLOR = 0xFF4444;
+
     private static final String GOGGLES = "goggles.";
 
     // * Matches CableNetworkManager
@@ -183,11 +187,11 @@ public class NetworkBackupDriveBlockEntity extends BlockEntity implements Partia
         final int sources = CableNetworkManager.countStoredSources(this.boundedSnapshot);
         final int outputs = CableNetworkManager.countConnectionsInBackupSnapshot(this.boundedSnapshot);
 
-        lang(GOGGLES + "sources", number(sources)).style(ChatFormatting.WHITE).forGoggles(tooltip, 1);
-        lang(GOGGLES + "outputs", number(outputs)).style(ChatFormatting.WHITE).forGoggles(tooltip, 1);
+        lang(GOGGLES + "sources", number(sources, SOURCE_COLOR)).style(ChatFormatting.GRAY).forGoggles(tooltip, 1);
+        lang(GOGGLES + "outputs", number(outputs, OUTPUT_COLOR)).style(ChatFormatting.GRAY).forGoggles(tooltip, 1);
 
         if (BackupDriveGoggleClient.showsCableCost()) {
-            lang(GOGGLES + "cost", number(outputs)).style(ChatFormatting.WHITE).forGoggles(tooltip, 1);
+            lang(GOGGLES + "cost", number(outputs, CABLE_COST_COLOR)).style(ChatFormatting.GRAY).forGoggles(tooltip, 1);
         }
     }
 
@@ -195,8 +199,8 @@ public class NetworkBackupDriveBlockEntity extends BlockEntity implements Partia
         return new LangBuilder(DriveBySableMod.MOD_ID).translate(key, args);
     }
 
-    private static Component number(final int amount) {
-        return Component.literal(String.valueOf(amount)).withStyle(ChatFormatting.AQUA);
+    private static Component number(final int amount, final int color) {
+        return Component.literal(String.valueOf(amount)).withStyle(style -> style.withColor(color));
     }
     //#endregion
 

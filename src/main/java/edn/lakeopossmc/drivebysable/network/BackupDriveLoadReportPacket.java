@@ -44,6 +44,9 @@ public record BackupDriveLoadReportPacket(
         return TYPE;
     }
 
+    private static final int SOURCE_COLOR = 0x7FCDE0;
+    private static final int OUTPUT_COLOR = 0xDDC166;
+
     public static void handle(final BackupDriveLoadReportPacket payload, final IPayloadContext context) {
         final boolean complete = payload.missingSources() == 0 && payload.missingSinks() == 0;
         final List<MutableComponent> lines = new ArrayList<>();
@@ -51,8 +54,10 @@ public record BackupDriveLoadReportPacket(
         if (complete && payload.restoredConnections() == 0) {
             lines.add(Component.translatable("drivebysable.backup_drive.load_report.unchanged")
                     .withStyle(ChatFormatting.RED));
-            lines.add(present("drivebysable.backup_drive.load_report.sources_present", payload.loadedSources()));
-            lines.add(present("drivebysable.backup_drive.load_report.outputs_present", payload.loadedSinks()));
+            lines.add(present("drivebysable.backup_drive.load_report.sources_present",
+                    payload.loadedSources(), SOURCE_COLOR));
+            lines.add(present("drivebysable.backup_drive.load_report.outputs_present",
+                    payload.loadedSinks(), OUTPUT_COLOR));
             lines.add(Component.translatable("drivebysable.backup_drive.load_report.kept")
                     .withStyle(ChatFormatting.GRAY));
 
@@ -66,9 +71,9 @@ public record BackupDriveLoadReportPacket(
                 .withStyle(complete ? ChatFormatting.GREEN : ChatFormatting.GOLD));
 
         lines.add(line("drivebysable.backup_drive.load_report.sources",
-                payload.loadedSources(), payload.missingSources()));
+                payload.loadedSources(), payload.missingSources(), SOURCE_COLOR));
         lines.add(line("drivebysable.backup_drive.load_report.outputs",
-                payload.loadedSinks(), payload.missingSinks()));
+                payload.loadedSinks(), payload.missingSinks(), OUTPUT_COLOR));
 
         if (!complete) {
             lines.add(Component.translatable("drivebysable.backup_drive.load_report.retry")
@@ -79,18 +84,18 @@ public record BackupDriveLoadReportPacket(
         context.enqueueWork(() -> CableHoverTip.pin(lines, DISPLAY_TICKS));
     }
 
-    // * Restored in green, missing in red
-    private static MutableComponent present(final String key, final int count) {
+    // * Color coded per data type
+    private static MutableComponent present(final String key, final int count, final int color) {
         return Component.translatable(
                 key,
-                Component.literal(String.valueOf(count)).withStyle(ChatFormatting.YELLOW)
+                Component.literal(String.valueOf(count)).withStyle(style -> style.withColor(color))
         ).withStyle(ChatFormatting.WHITE);
     }
 
-    private static MutableComponent line(final String key, final int loaded, final int missing) {
+    private static MutableComponent line(final String key, final int loaded, final int missing, final int color) {
         return Component.translatable(
                 key,
-                Component.literal(String.valueOf(loaded)).withStyle(ChatFormatting.GREEN),
+                Component.literal(String.valueOf(loaded)).withStyle(style -> style.withColor(color)),
                 Component.literal(String.valueOf(missing))
                         .withStyle(missing > 0 ? ChatFormatting.RED : ChatFormatting.GRAY)
         ).withStyle(ChatFormatting.WHITE);
