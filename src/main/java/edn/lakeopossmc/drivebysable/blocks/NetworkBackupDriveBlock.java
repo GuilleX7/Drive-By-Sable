@@ -1,6 +1,7 @@
 package edn.lakeopossmc.drivebysable.blocks;
 
 import com.mojang.serialization.MapCodec;
+import edn.lakeopossmc.drivebysable.cable.CableDataLostSound;
 import edn.lakeopossmc.drivebysable.cable.CableNetworkManager;
 import net.minecraft.core.BlockPos;
 import net.minecraft.server.level.ServerLevel;
@@ -134,4 +135,29 @@ public class NetworkBackupDriveBlock extends Block implements EntityBlock, Speci
         }
         super.onRemove(state, level, pos, newState, movedByPiston);
     }
+
+    //#region // --- WRONG TOOL FEEDBACK --- //
+    @Override
+    public BlockState playerWillDestroy(
+            final Level level,
+            final BlockPos pos,
+            final BlockState state,
+            final Player player
+    ) {
+        if (!level.isClientSide
+                && !player.isCreative()
+                && !state.canHarvestBlock(level, pos, player)
+                && holdsData(level, pos)) {
+            CableDataLostSound.play(level, pos);
+        }
+
+        return super.playerWillDestroy(level, pos, state, player);
+    }
+
+    private static boolean holdsData(final Level level, final BlockPos pos) {
+        return level.getBlockEntity(pos) instanceof final NetworkBackupDriveBlockEntity drive
+                && drive.hasStoredSnapshot();
+    }
+
+    //#endregion
 }

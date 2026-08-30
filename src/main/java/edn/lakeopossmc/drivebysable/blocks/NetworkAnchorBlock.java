@@ -2,6 +2,7 @@ package edn.lakeopossmc.drivebysable.blocks;
 
 import com.mojang.serialization.MapCodec;
 import edn.lakeopossmc.drivebysable.CableBlockEntities;
+import edn.lakeopossmc.drivebysable.cable.CableDataLostSound;
 import net.minecraft.core.BlockPos;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.InteractionResult;
@@ -88,6 +89,23 @@ public class NetworkAnchorBlock extends BaseEntityBlock {
     @Override
     public ItemStack getCloneItemStack(final LevelReader level, final BlockPos pos, final BlockState state) {
         return new ItemStack(this);
+    }
+    //#endregion
+
+    //#region // --- LOSING STORED DATA --- //
+    @Override
+    public BlockState playerWillDestroy(
+            final Level level,
+            final BlockPos pos,
+            final BlockState state,
+            final Player player
+    ) {
+        if (level.getBlockEntity(pos) instanceof final NetworkAnchorBlockEntity anchor
+                && anchor.hasStoredSnapshot()) {
+            CableDataLostSound.play(level, pos);
+        }
+
+        return super.playerWillDestroy(level, pos, state, player);
     }
     //#endregion
 
