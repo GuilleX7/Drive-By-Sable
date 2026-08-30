@@ -88,6 +88,14 @@
   "block.drivebysable.backup_drive.tooltip.condition2": "When saved in a schematic file",
   "block.drivebysable.backup_drive.tooltip.behaviour2": "Stores saved _Network data_ to be loaded after a schematic is placed. Saving and loading is also done using the _Configuration Interface_.",
 
+  "block.drivebysable.network_anchor.tooltip.summary": "A _work-in-progress_ feature. Functions as a _creative-only_ counterpart to the Network Backup Drive.",
+  "block.drivebysable.network_anchor.tooltip.condition1": "When R-Clicked",
+  "block.drivebysable.network_anchor.tooltip.behaviour1": "Saves _connection data_ within a configured _radius_ around the Anchor. Uses the same rules for valid connection data as its counterpart.",
+  "block.drivebysable.network_anchor.tooltip.condition2": "When R-Clicked while Sneaking",
+  "block.drivebysable.network_anchor.tooltip.behaviour2": "Clears saved _connection data_.",
+  "block.drivebysable.network_anchor.tooltip.condition3": "When saved in a schematic file",
+  "block.drivebysable.network_anchor.tooltip.behaviour3": "Stores saved _Network data_ to be loaded after a schematic is placed. Data is loaded _automatically_ on schematic placement. Does not work with the _Schematicannon_.",
+
   "drivebysable.ponder.tag.main": "Cable Networking Tools",
   "drivebysable.ponder.tag.main.description": "Cable-based redstone networking, no frequencies required",
 

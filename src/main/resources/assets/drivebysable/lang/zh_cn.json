@@ -88,6 +88,14 @@
   "block.drivebysable.backup_drive.tooltip.condition2": "保存到蓝图文件中时",
   "block.drivebysable.backup_drive.tooltip.behaviour2": "储存已保存的_网络数据_，以便在放置蓝图后加载。保存与加载同样通过_配置界面_完成。",
 
+  "block.drivebysable.network_anchor.tooltip.summary": "一项_开发中_的功能。作为网络备份驱动器的_仅限创造_对应物。",
+  "block.drivebysable.network_anchor.tooltip.condition1": "右键点击时",
+  "block.drivebysable.network_anchor.tooltip.behaviour1": "保存锚点周围所配置_半径_内的_连接数据_。使用与其对应物相同的有效连接数据规则。",
+  "block.drivebysable.network_anchor.tooltip.condition2": "潜行时右键点击",
+  "block.drivebysable.network_anchor.tooltip.behaviour2": "清除已保存的_连接数据_。",
+  "block.drivebysable.network_anchor.tooltip.condition3": "保存到蓝图文件中时",
+  "block.drivebysable.network_anchor.tooltip.behaviour3": "储存已保存的_网络数据_，以便在放置蓝图后加载。放置蓝图时会_自动_加载数据。不支持_蓝图炮_。",
+
   "drivebysable.ponder.tag.main": "电缆联网工具",
   "drivebysable.ponder.tag.main.description": "基于电缆的红石联网，无需频率",
 

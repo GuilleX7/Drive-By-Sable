@@ -88,6 +88,14 @@
   "block.drivebysable.backup_drive.tooltip.condition2": "При сохранении в файл схематики",
   "block.drivebysable.backup_drive.tooltip.behaviour2": "Хранит сохранённые _данные сети_ для загрузки после установки схематики. Сохранение и загрузка также выполняются через _интерфейс конфигурации_.",
 
+  "block.drivebysable.network_anchor.tooltip.summary": "Функция _в разработке_. Работает как _только творческий_ аналог Сетевого хранилища.",
+  "block.drivebysable.network_anchor.tooltip.condition1": "ПКМ по блоку",
+  "block.drivebysable.network_anchor.tooltip.behaviour1": "Сохраняет _данные соединений_ в пределах заданного _радиуса_ вокруг якоря. Использует те же правила, что и его аналог.",
+  "block.drivebysable.network_anchor.tooltip.condition2": "ПКМ со скрадыванием",
+  "block.drivebysable.network_anchor.tooltip.behaviour2": "Очищает сохранённые _данные соединений_.",
+  "block.drivebysable.network_anchor.tooltip.condition3": "При сохранении в файл схематики",
+  "block.drivebysable.network_anchor.tooltip.behaviour3": "Хранит сохранённые _данные сети_ для загрузки после установки схематики. Данные загружаются _автоматически_ при установке. Не работает со _Схематиканноном_.",
+
   "drivebysable.ponder.tag.main": "Кабельные сети",
   "drivebysable.ponder.tag.main.description": "Редстоуновые сети, построенные на использовании кабелей.",
 

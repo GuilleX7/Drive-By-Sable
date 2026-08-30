@@ -88,6 +88,14 @@
   "block.drivebysable.backup_drive.tooltip.condition2": "Gdy zapisany w pliku schematu",
   "block.drivebysable.backup_drive.tooltip.behaviour2": "Przechowuje zapisane _dane Sieci_, aby wczytać je po umieszczeniu schematu. Zapisywanie i wczytywanie odbywa się również przez _Interfejs Konfiguracji_.",
 
+  "block.drivebysable.network_anchor.tooltip.summary": "Funkcja _w trakcie prac_. Działa jako _tylko kreatywny_ odpowiednik Sieciowego Dysku Kopii Zapasowej.",
+  "block.drivebysable.network_anchor.tooltip.condition1": "Po kliknięciu PPM",
+  "block.drivebysable.network_anchor.tooltip.behaviour1": "Zapisuje _dane połączeń_ w skonfigurowanym _promieniu_ wokół Kotwicy. Stosuje te same zasady prawidłowych danych połączeń co jej odpowiednik.",
+  "block.drivebysable.network_anchor.tooltip.condition2": "Po kliknięciu Skradanie + PPM",
+  "block.drivebysable.network_anchor.tooltip.behaviour2": "Czyści zapisane _dane połączeń_.",
+  "block.drivebysable.network_anchor.tooltip.condition3": "Gdy zapisana w pliku schematu",
+  "block.drivebysable.network_anchor.tooltip.behaviour3": "Przechowuje zapisane _dane Sieci_, aby wczytać je po umieszczeniu schematu. Dane są wczytywane _automatycznie_ przy umieszczeniu schematu. Nie działa ze _Schematicannonem_.",
+
   "drivebysable.ponder.tag.main": "Narzędzia Sieci Kablowej",
   "drivebysable.ponder.tag.main.description": "Sieciowanie redstone oparte na kablach, bez potrzeby częstotliwości",
 
