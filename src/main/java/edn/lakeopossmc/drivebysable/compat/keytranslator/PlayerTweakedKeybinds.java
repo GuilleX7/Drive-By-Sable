@@ -1,4 +1,4 @@
-package edn.lakeopossmc.drivebysable.compat;
+package edn.lakeopossmc.drivebysable.compat.keytranslator;
 
 import java.util.HashMap;
 import java.util.Map;
