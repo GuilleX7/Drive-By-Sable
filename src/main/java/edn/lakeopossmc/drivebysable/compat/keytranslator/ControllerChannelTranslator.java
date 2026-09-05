@@ -1,7 +1,6 @@
 package edn.lakeopossmc.drivebysable.compat.keytranslator;
 
 import edn.lakeopossmc.drivebysable.compat.CableTypewriterHubServerHandler;
-import edn.lakeopossmc.drivebysable.compat.PlayerTweakedKeybinds;
 import edn.lakeopossmc.drivebysable.compat.TweakedControllerCableServerHandler;
 
 import java.util.HashMap;
