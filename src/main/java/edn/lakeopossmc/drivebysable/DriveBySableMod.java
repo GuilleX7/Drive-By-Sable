@@ -2,6 +2,8 @@ package edn.lakeopossmc.drivebysable;
 
 import com.mojang.logging.LogUtils;
 import com.simibubi.create.foundation.item.ItemDescription;
+
+import edn.lakeopossmc.drivebysable.compat.computercraft.ComputerCraftCompat;
 import edn.lakeopossmc.drivebysable.network.CablePackets;
 import edn.lakeopossmc.drivebysable.ponder.DriveBySablePonderPlugin;
 import net.createmod.ponder.foundation.PonderIndex;
@@ -44,6 +46,7 @@ public class DriveBySableMod {
             CableCreativeTabs.register(modEventBus);
         }
         CableSounds.register(modEventBus);
+        ComputerCraftCompat.register(modEventBus);
         modEventBus.addListener(CablePackets::register);
         modEventBus.addListener(this::commonSetup);
         modEventBus.addListener(this::clientSetup);
@@ -62,6 +65,7 @@ public class DriveBySableMod {
             event.enqueueWork(CableSimulatedTab::register);
         }
     }
+
     // * Register ponder plugin
     private void clientSetup(final FMLClientSetupEvent event) {
         event.enqueueWork(() -> PonderIndex.addPlugin(new DriveBySablePonderPlugin()));

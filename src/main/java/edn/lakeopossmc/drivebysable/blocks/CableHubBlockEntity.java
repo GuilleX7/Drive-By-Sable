@@ -3,12 +3,15 @@ package edn.lakeopossmc.drivebysable.blocks;
 import com.simibubi.create.content.equipment.clipboard.ClipboardCloneable;
 import com.simibubi.create.foundation.blockEntity.SmartBlockEntity;
 import com.simibubi.create.foundation.blockEntity.behaviour.BlockEntityBehaviour;
+import dev.simulated_team.simulated.compat.computercraft.AttachedComputerHandler;
+
 import edn.lakeopossmc.drivebysable.CableBlockEntities;
 import edn.lakeopossmc.drivebysable.CableBlocks;
 import edn.lakeopossmc.drivebysable.cable.CableNetworkManager;
 import edn.lakeopossmc.drivebysable.cable.CableServerFeedback;
 import edn.lakeopossmc.drivebysable.cable.MultiChannelCableSource;
 import edn.lakeopossmc.drivebysable.cable.graph.CableNetworkNode.CableNetworkSink;
+import edn.lakeopossmc.drivebysable.compat.computercraft.ComputerCraftCompat;
 import edn.lakeopossmc.drivebysable.compat.keytranslator.ControllerChannelTranslator;
 import edn.lakeopossmc.drivebysable.compat.keytranslator.ControllerChannelTranslator.Vocabulary;
 import net.minecraft.core.BlockPos;
@@ -36,8 +39,17 @@ public class CableHubBlockEntity extends SmartBlockEntity implements ClipboardCl
     private static final String DIRECTION_KEY = "Direction";
     private static final String CHANNEL_KEY = "Channel";
 
+    public final AttachedComputerHandler computerHandler;
+    public String computerEventPrefix = "";
+
     public CableHubBlockEntity(final BlockPos pos, final BlockState state) {
         super(CableBlockEntities.CABLE_HUB.get(), pos, state);
+
+        if (ComputerCraftCompat.isLoaded()) {
+            this.computerHandler = new AttachedComputerHandler();
+        } else {
+            this.computerHandler = null;
+        }
     }
 
     // * Cable hub speaks linked controller, advanced hub speaks tweaked controller
@@ -159,6 +171,22 @@ public class CableHubBlockEntity extends SmartBlockEntity implements ClipboardCl
         }
 
         return true;
+    }
+    //#endregion
+
+    //#region // --- COMPUTER CRAFT COMPAT --- //
+    public String getComputerEventPrefix() {
+        return computerEventPrefix;
+    }
+
+    public void setComputerEventPrefix(final String computerEventPrefix) {
+        this.computerEventPrefix = computerEventPrefix;
+    }
+
+    public String getComputerEventName(final String eventName) {
+        return (this.computerEventPrefix != null && !this.computerEventPrefix.isEmpty())
+                ? String.format("%s_%s", this.computerEventPrefix, eventName)
+                : eventName;
     }
     //#endregion
 }

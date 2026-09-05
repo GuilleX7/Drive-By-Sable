@@ -1,6 +1,6 @@
 package edn.lakeopossmc.drivebysable.network;
 
-import edn.lakeopossmc.drivebysable.compat.PlayerTweakedKeybinds;
+import edn.lakeopossmc.drivebysable.compat.keytranslator.PlayerTweakedKeybinds;
 import net.minecraft.network.FriendlyByteBuf;
 import net.minecraft.network.codec.StreamCodec;
 import net.minecraft.network.protocol.common.custom.CustomPacketPayload;

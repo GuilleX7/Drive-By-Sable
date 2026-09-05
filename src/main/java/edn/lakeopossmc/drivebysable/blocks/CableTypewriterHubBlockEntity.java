@@ -14,6 +14,7 @@ import net.createmod.catnip.lang.Lang;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.core.HolderLookup;
+import net.minecraft.nbt.ByteTag;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.nbt.ListTag;
 import net.minecraft.nbt.StringTag;
@@ -34,14 +35,14 @@ import java.util.UUID;
 // --- BLOCK ENTITY FOR TYPEWRITER HUB --- //
 // * Wraps the typewriter to expose per key channels
 public class CableTypewriterHubBlockEntity extends LinkedTypewriterBlockEntity {
-
     private static final String SINK_KEY = "Sink";
     private static final String DIRECTION_KEY = "Direction";
     private static final String CHANNEL_KEY = "Channel";
+    private static CableTypewriterHubBlockEntity clientInstance;
 
     private final Set<String> connectedChannels = new HashSet<>();
-
-    private static CableTypewriterHubBlockEntity clientInstance;
+    private String computerEventPrefix = "";
+    private boolean promiscuousMode = false;
 
     public CableTypewriterHubBlockEntity(final BlockPos pos, final BlockState state) {
         super(CableBlockEntities.CABLE_TYPEWRITER_HUB.get(), pos, state);
@@ -98,21 +99,43 @@ public class CableTypewriterHubBlockEntity extends LinkedTypewriterBlockEntity {
     // * Only run vanilla key logic if it has a saved entry, always push to cable
     @Override
     public void pressKey(final int key) {
+        boolean isEventHandledBySuper = false;
         if (this.getTypewriterEntries().getEntry(key) != null) {
             super.pressKey(key);
+            isEventHandledBySuper = true;
         }
+
         if (this.level instanceof final ServerLevel level) {
             CableTypewriterHubServerHandler.receiveKey(level, this.getBlockPos(), key, true);
+
+            if (!isEventHandledBySuper) {
+                this.getPressedKeys().add(key);
+                if (this.computerHandler != null) {
+                    // * This event is only sent to the computer once per key press, so we always
+                    // pass false for the repeated parameter, see https://tweaked.cc/event/key.html
+                    this.computerHandler.queueEvent("key", key, false);
+                }
+            }
         }
     }
 
     @Override
     public void releaseKey(final int key) {
+        boolean isEventHandledBySuper = false;
         if (this.getTypewriterEntries().getEntry(key) != null) {
             super.releaseKey(key);
+            isEventHandledBySuper = true;
         }
+
         if (this.level instanceof final ServerLevel level) {
             CableTypewriterHubServerHandler.receiveKey(level, this.getBlockPos(), key, false);
+
+            if (!isEventHandledBySuper) {
+                this.getPressedKeys().removeIf(x -> x == key);
+                if (this.computerHandler != null) {
+                    this.computerHandler.queueEvent("key_up", key);
+                }
+            }
         }
     }
 
@@ -123,8 +146,9 @@ public class CableTypewriterHubBlockEntity extends LinkedTypewriterBlockEntity {
             clientInstance = null;
         }
         if (this.level instanceof final ServerLevel level) {
-            CableTypewriterHubServerHandler.KEY_TO_CHANNEL.values().forEach(channel ->
-                    CableNetworkManager.trySetSignalAt(level, this.getBlockPos(), channel, 0));
+            CableTypewriterHubServerHandler.KEY_TO_CHANNEL.values()
+                    .forEach(channel -> CableNetworkManager.trySetSignalAt(level, this.getBlockPos(), channel, 0));
+
         }
         try {
             super.disconnectUser();
@@ -133,15 +157,17 @@ public class CableTypewriterHubBlockEntity extends LinkedTypewriterBlockEntity {
         }
     }
 
-    // * Sync connected channels to client only, not saved to disk
+    // * Sync state to client only, not saved to disk
     @Override
     protected void write(final CompoundTag tag, final HolderLookup.Provider registries,
-                         final boolean clientPacket) {
+            final boolean clientPacket) {
         super.write(tag, registries, clientPacket);
         if (clientPacket) {
             final ListTag list = new ListTag();
             this.connectedChannels.forEach(ch -> list.add(StringTag.valueOf(ch)));
             tag.put("ConnectedChannels", list);
+
+            tag.put("PromiscuousMode", this.isInPromiscuousMode() ? ByteTag.ONE : ByteTag.ZERO);
         }
     }
 
@@ -149,12 +175,20 @@ public class CableTypewriterHubBlockEntity extends LinkedTypewriterBlockEntity {
     protected void read(final CompoundTag tag, final HolderLookup.Provider registries,
                         final boolean clientPacket) {
         super.read(tag, registries, clientPacket);
-        if (clientPacket && tag.contains("ConnectedChannels")) {
+        if (!clientPacket) {
+            return;
+        }
+
+        if (tag.contains("ConnectedChannels")) {
             this.connectedChannels.clear();
             final ListTag list = tag.getList("ConnectedChannels", 8);
             for (int i = 0; i < list.size(); i++) {
                 this.connectedChannels.add(list.getString(i));
             }
+        }
+
+        if (tag.contains("PromiscuousMode")) {
+            this.setPromiscuousMode(tag.getByte("PromiscuousMode") != 0);
         }
     }
 
@@ -288,6 +322,35 @@ public class CableTypewriterHubBlockEntity extends LinkedTypewriterBlockEntity {
         }
 
         return true;
+    }
+    // #endregion
+
+    //#region // --- COMPUTER CRAFT COMPAT --- //
+    // * Prefixing Computer Craft events helps the computer to distinguish
+    // between the internal keyboard and external linked typewriter key presses
+    public String getComputerEventPrefix() {
+        return computerEventPrefix;
+    }
+
+    public void setComputerEventPrefix(final String computerEventPrefix) {
+        this.computerEventPrefix = computerEventPrefix;
+    }
+
+    public String getComputerEventName(final String eventName) {
+        return (this.computerEventPrefix != null && !this.computerEventPrefix.isEmpty())
+                ? String.format("%s_%s", this.computerEventPrefix, eventName)
+                : eventName;
+    }
+
+    // * Promiscuous mode allows the typewriter hub to relay all key events to
+    // connected computers, regardless of channel matching.
+    public boolean isInPromiscuousMode() {
+        return promiscuousMode;
+    }
+
+    public void setPromiscuousMode(final boolean promiscuousMode) {
+        this.promiscuousMode = promiscuousMode;
+        this.sendData();
     }
     //#endregion
 
