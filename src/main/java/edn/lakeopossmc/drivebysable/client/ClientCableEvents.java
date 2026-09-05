@@ -51,7 +51,7 @@ public final class ClientCableEvents {
 
         if (be.getTypewriterEntries().getEntry(key) != null) return;
         
-        if (!be.hasConnectionForChannel(channel)) return;
+        if (!be.hasConnectionForChannel(channel) && !be.isInPromiscuousMode()) return;
         
         suppressMatchingKeyMappings(Minecraft.getInstance(), key, event.getScanCode());
         
