@@ -131,6 +131,8 @@ public final class ClientCableNetworkHandler {
     private static String armedSinkModule;
     private static String armedSinkChannel;
 
+    private static Direction armedSinkFace;
+
     // * Module boxes are not drawn from here
     private static final Map<BlockPos, Map<String, Integer>> moduleOutlines = new LinkedHashMap<>();
 
@@ -229,12 +231,19 @@ public final class ClientCableNetworkHandler {
             return;
         }
 
-        if (!event.getItemStack().is(CableItems.CABLE.get())
-                && !event.getItemStack().is(CableItems.CABLE_CUTTER.get())) {
+        final boolean isCable = event.getItemStack().is(CableItems.CABLE.get());
+        if (!isCable && !event.getItemStack().is(CableItems.CABLE_CUTTER.get())) {
             return;
         }
 
         if (cancelChannelSelect(player)) {
+            event.setCancellationResult(net.minecraft.world.InteractionResult.SUCCESS);
+            event.setCanceled(true);
+            return;
+        }
+
+        if (armedSinkPos != null) {
+            confirmArmedSink(player, event.getItemStack(), player.level(), isCable);
             event.setCancellationResult(net.minecraft.world.InteractionResult.SUCCESS);
             event.setCanceled(true);
         }
@@ -260,6 +269,12 @@ public final class ClientCableNetworkHandler {
         }
 
         lastCancelTick = player.level().getGameTime();
+
+        // * Backing out keeps whatever was already armed
+        if (armedSinkPos != null) {
+            final ItemStack held = player.getMainHandItem();
+            confirmArmedSink(player, held, player.level(), held.is(CableItems.CABLE.get()));
+        }
 
         clearSource();
         CableHoverTip.clear();
@@ -655,6 +670,7 @@ public final class ClientCableNetworkHandler {
         armedSinkPos = null;
         armedSinkModule = null;
         armedSinkChannel = null;
+        armedSinkFace = null;
     }
 
     // * Used by CableItem for the enchant glint while a source is selected
@@ -775,15 +791,18 @@ public final class ClientCableNetworkHandler {
 
         // * Clicking endpoint started from leaves setup mode
         if (selectedSource.equals(pos) && Objects.equals(selectedSourceModule, subTarget)) {
+            // * An armed output is honoured on the way out
+            if (armedSinkPos != null) {
+                confirmArmedSink(player, heldItem, level, true);
+            }
+
             clearSource();
             return true;
         }
 
-        // * Second click on an armed output confirms whatever channel is showing
-        if (armedSinkPos != null && armedSinkPos.equals(pos) && Objects.equals(armedSinkModule, subTarget)) {
-            final String confirmed = armedSinkChannel;
-            clearArmedSink();
-            return toggleConnection(player, heldItem, level, pos, face, confirmed, true);
+        // * Any second click confirms
+        if (armedSinkPos != null) {
+            return confirmArmedSink(player, heldItem, level, true);
         }
 
         // * Either a module on a panel, or a plain block that names its own output channels
@@ -806,7 +825,7 @@ public final class ClientCableNetworkHandler {
                 return toggleConnection(player, heldItem, level, pos, face, channels.getFirst(), true);
             }
 
-            armSink(level, player, pos, subTarget, channels);
+            armSink(level, player, pos, face, subTarget, channels);
             return true;
         }
 
@@ -841,14 +860,16 @@ public final class ClientCableNetworkHandler {
         }
 
         if (selectedSource.equals(pos) && Objects.equals(selectedSourceModule, subTarget)) {
+            if (armedSinkPos != null) {
+                confirmArmedSink(player, ItemStack.EMPTY, level, false);
+            }
+
             clearSource();
             return true;
         }
 
-        if (armedSinkPos != null && armedSinkPos.equals(pos) && Objects.equals(armedSinkModule, subTarget)) {
-            final String confirmed = armedSinkChannel;
-            clearArmedSink();
-            return toggleConnection(player, ItemStack.EMPTY, level, pos, face, confirmed, false);
+        if (armedSinkPos != null) {
+            return confirmArmedSink(player, ItemStack.EMPTY, level, false);
         }
 
         if (subTarget != null || isMultiChannelSink(level, pos)) {
@@ -864,7 +885,7 @@ public final class ClientCableNetworkHandler {
                 return toggleConnection(player, ItemStack.EMPTY, level, pos, face, channels.getFirst(), false);
             }
 
-            armSink(level, player, pos, subTarget, channels);
+            armSink(level, player, pos, face, subTarget, channels);
             return true;
         }
 
@@ -872,16 +893,33 @@ public final class ClientCableNetworkHandler {
         return toggleConnection(player, ItemStack.EMPTY, level, pos, face, CableNetworkSink.BLOCK_FACE, false);
     }
 
+    // * Uses the position and face the output was armed on
+    private static boolean confirmArmedSink(
+            final Player player,
+            final ItemStack heldItem,
+            final Level level,
+            final boolean connecting
+    ) {
+        final BlockPos pos = armedSinkPos;
+        final Direction face = armedSinkFace == null ? Direction.UP : armedSinkFace;
+        final String confirmed = armedSinkChannel;
+
+        clearArmedSink();
+        return toggleConnection(player, heldItem, level, pos, face, confirmed, connecting);
+    }
+
     // * Hold an output while the player scrolls its channels
     private static void armSink(
             final Level level,
             final Player player,
             final BlockPos pos,
+            final Direction face,
             final String subTarget,
             final List<String> channels
     ) {
         armedSinkPos = pos.immutable();
         armedSinkModule = subTarget;
+        armedSinkFace = face;
 
         final List<String> connected = connectedSinkChannels(level, pos, subTarget);
         armedSinkChannel = connected.isEmpty() ? channels.getFirst() : connected.getFirst();
@@ -1031,9 +1069,7 @@ public final class ClientCableNetworkHandler {
         // * Says why the bare panel is refused, before the click rather than after.
         // * Checked ahead of both branches since it applies with or without a source
         if (hitBlock && missingRequiredSubTarget(level, ((BlockHitResult) hitResult).getBlockPos(), player)) {
-            tip.add(Component.translatable("drivebysable.cable_actions.module_required")
-                    .withStyle(net.minecraft.ChatFormatting.RED));
-            CableHoverTip.show(tip);
+            drivebysable$refuse(tip, "drivebysable.cable_actions.module_required");
             return;
         }
 
@@ -1090,9 +1126,7 @@ public final class ClientCableNetworkHandler {
         // * Say so before the click
         if (CableNetworkManager.wouldExceedSinkLimit(level, selectedSource, currentChannel)
                 && (hitPos == null || !activeChannelHasSinkAt(hitPos))) {
-            tip.add(Component.translatable("drivebysable.cable_actions.output_limit_reached")
-                    .withStyle(net.minecraft.ChatFormatting.RED));
-            CableHoverTip.show(tip);
+            drivebysable$refuse(tip, "drivebysable.cable_actions.output_limit_reached");
             return;
         }
 
@@ -1123,6 +1157,7 @@ public final class ClientCableNetworkHandler {
         }
 
         // * Last of everything, so it sits directly on top of the channel readout
+        addCancelLine(tip, player);
         addChannelGroupLine(tip, level);
         CableHoverTip.show(tip);
     }
@@ -1139,6 +1174,12 @@ public final class ClientCableNetworkHandler {
         final Direction hitFace = hitBlock ? ((BlockHitResult) hitResult).getDirection() : Direction.UP;
         // * Aiming at nothing says nothing
         if (hitPos == null) {
+            if (selectedSource == null) {
+                return;
+            }
+
+            addCutterSelectionActions(tip, player);
+            CableHoverTip.show(tip);
             return;
         }
 
@@ -1146,7 +1187,7 @@ public final class ClientCableNetworkHandler {
 
         //#region // --- SNEAKING --- //
         // * Sneak plus use clears everything on the target
-        if (player.isShiftKeyDown()) {
+        if (player.isShiftKeyDown() && selectedSource == null) {
             if (missingRequiredSubTarget(level, hitPos, player)) {
                 drivebysable$refuse(tip, "drivebysable.cable_actions.module_required");
                 return;
@@ -1186,8 +1227,7 @@ public final class ClientCableNetworkHandler {
 
         // * An armed output owns scroll until a second click disconnects it
         if (armedSinkPos != null) {
-            tip.add(Component.translatable("drivebysable.cable_actions.select_output_channel"));
-            tip.add(Component.translatable("drivebysable.cable_cutter_actions.disconnect_output", Component.keybind("key.use")));
+            addCutterSelectionActions(tip, player);
             CableHoverTip.show(tip);
             return;
         }
@@ -1195,7 +1235,7 @@ public final class ClientCableNetworkHandler {
         // * Back on the source itself
         if (hitPos != null && selectedSource.equals(hitPos) && Objects.equals(selectedSourceModule, subTarget)) {
             tip.add(Component.translatable("drivebysable.cable_cutter_actions.exit_select", Component.keybind("key.use")));
-            tip.add(Component.translatable("drivebysable.cable_cutter_actions.disconnect_all", drivebysable$sneakUse(false)));
+            addCutterSelectionActions(tip, player);
             CableHoverTip.show(tip);
             return;
         }
@@ -1206,15 +1246,12 @@ public final class ClientCableNetworkHandler {
             return;
         }
 
-        // * Scrolling stays useful either way
-        tip.add(Component.translatable("drivebysable.cable_actions.select_channel"));
-
         if (!drivebysable$isDisconnectable(level, hitPos, hitFace, subTarget)) {
             drivebysable$refuse(tip, "drivebysable.cable_cutter_actions.invalid_output");
             return;
         }
 
-        tip.add(Component.translatable("drivebysable.cable_cutter_actions.disconnect_output", Component.keybind("key.use")));
+        addCutterSelectionActions(tip, player);
         CableHoverTip.show(tip);
         //#endregion
     }
@@ -1238,6 +1275,13 @@ public final class ClientCableNetworkHandler {
 
     // * Closes the tip on a red reason line
     private static void drivebysable$refuse(final List<MutableComponent> tip, final String langKey) {
+        final MutableComponent header = tip.isEmpty() ? null : tip.getFirst();
+        tip.clear();
+
+        if (header != null) {
+            tip.add(header);
+        }
+
         tip.add(Component.translatable(langKey).withStyle(ChatFormatting.RED));
         CableHoverTip.show(tip);
     }
@@ -1374,6 +1418,24 @@ public final class ClientCableNetworkHandler {
     private static boolean hasMultipleChannelGroups(final Level level) {
         final ChannelGroupedCableSource grouped = groupedSource(level);
         return grouped != null && grouped.cable$getChannelGroups(level, selectedSource).size() > 1;
+    }
+
+    private static void addCutterSelectionActions(final List<MutableComponent> tip, final Player player) {
+        tip.add(Component.translatable("drivebysable.cable_actions.select_output_channel"));
+        tip.add(Component.translatable(
+                "drivebysable.cable_cutter_actions.disconnect_output", Component.keybind("key.use")));
+        addCancelLine(tip, player);
+    }
+
+    // * Only meaningful once something is selected
+    private static void addCancelLine(final List<MutableComponent> tip, final Player player) {
+        if (selectedSource == null) {
+            return;
+        }
+
+        tip.add(Component.translatable(
+                "drivebysable.cable_actions.cancel_selection",
+                drivebysable$sneakUse(player.isShiftKeyDown())));
     }
 
     private static void addChannelGroupLine(final List<MutableComponent> tip, final Level level) {
