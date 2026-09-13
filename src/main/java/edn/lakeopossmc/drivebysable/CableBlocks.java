@@ -50,20 +50,22 @@ public final class CableBlocks {
     public static final DeferredBlock<IntegratedSensorBusBlock> INTEGRATED_SENSOR_BUS = BLOCKS.register(
             "integrated_sensor_bus",
             () -> new IntegratedSensorBusBlock(BlockBehaviour.Properties.of()
-                    .mapColor(MapColor.TERRACOTTA_BLACK)
-                    .sound(SoundType.METAL)
+                    .mapColor(MapColor.TERRACOTTA_BLUE)
+                    .sound(SoundType.NETHERITE_BLOCK)
                     .strength(3.5F, 6.0F)
-                    .requiresCorrectToolForDrops())
+                    .requiresCorrectToolForDrops()
+                    .noOcclusion())
     );
 
     // * Hundred channel source driven by a computer, contributed feature
     public static final DeferredBlock<MultiChannelCableBusBlock> MULTI_CHANNEL_CABLE_BUS = BLOCKS.register(
             "multi_channel_cable_bus",
             () -> new MultiChannelCableBusBlock(BlockBehaviour.Properties.of()
-                    .mapColor(MapColor.TERRACOTTA_BLACK)
+                    .mapColor(MapColor.TERRACOTTA_BROWN)
                     .sound(SoundType.METAL)
                     .strength(3.5F, 6.0F)
-                    .requiresCorrectToolForDrops())
+                    .requiresCorrectToolForDrops()
+                    .noOcclusion())
     );
 
     public static final DeferredBlock<CableHubBlock> CABLE_HUB = BLOCKS.register(

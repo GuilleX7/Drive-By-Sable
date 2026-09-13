@@ -14,6 +14,8 @@ import net.neoforged.api.distmarker.Dist;
 import net.neoforged.bus.api.SubscribeEvent;
 import net.neoforged.fml.ModList;
 import net.neoforged.fml.common.EventBusSubscriber;
+import edn.lakeopossmc.drivebysable.client.render.IntegratedSensorBusRenderer;
+import edn.lakeopossmc.drivebysable.client.render.SensorBusPartialModels;
 import net.neoforged.neoforge.client.event.EntityRenderersEvent;
 import net.neoforged.neoforge.client.event.InputEvent;
 import net.neoforged.neoforge.network.PacketDistributor;
@@ -27,6 +29,12 @@ public final class ClientCableEvents {
 
     @SubscribeEvent
     public static void onRegisterRenderers(final EntityRenderersEvent.RegisterRenderers event) {
+        // * The Sensor Bus draws its own moving parts
+        SensorBusPartialModels.load();
+        event.registerBlockEntityRenderer(
+                CableBlockEntities.INTEGRATED_SENSOR_BUS.get(),
+                IntegratedSensorBusRenderer::new);
+
         if (!SIMULATED_LOADED) return;
 
         event.registerBlockEntityRenderer(
@@ -40,21 +48,21 @@ public final class ClientCableEvents {
     @SubscribeEvent
     public static void onKeyInput(final InputEvent.Key event) {
         if (!SIMULATED_LOADED) return;
-        
+
         final CableTypewriterHubBlockEntity be = CableTypewriterHubBlockEntity.getClientInstance();
         if (be == null) return;
         if (LinkedTypewriterInteractionHandler.getMode() != LinkedTypewriterInteractionHandler.Mode.ACTIVE) return;
-        
+
         final int key = event.getKey();
         final String channel = CableTypewriterHubServerHandler.KEY_TO_CHANNEL.get(key);
         if (channel == null) return;
 
         if (be.getTypewriterEntries().getEntry(key) != null) return;
-        
+
         if (!be.hasConnectionForChannel(channel) && !be.isInPromiscuousMode()) return;
-        
+
         suppressMatchingKeyMappings(Minecraft.getInstance(), key, event.getScanCode());
-        
+
         if (event.getAction() == GLFW.GLFW_REPEAT) return;
 
         final boolean press = event.getAction() == GLFW.GLFW_PRESS;
