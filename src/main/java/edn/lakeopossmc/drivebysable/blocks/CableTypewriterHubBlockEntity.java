@@ -12,6 +12,7 @@ import edn.lakeopossmc.drivebysable.compat.keytranslator.ControllerChannelTransl
 import edn.lakeopossmc.drivebysable.compat.keytranslator.ControllerChannelTranslator.Vocabulary;
 import edn.lakeopossmc.drivebysable.compat.computercraft.ComputerCraftCompat;
 import edn.lakeopossmc.drivebysable.mixinducks.LinkedTypewriterBlockEntityDuck;
+import com.simibubi.create.foundation.blockEntity.behaviour.BlockEntityBehaviour;
 import net.createmod.catnip.lang.Lang;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
@@ -40,13 +41,28 @@ public class CableTypewriterHubBlockEntity extends LinkedTypewriterBlockEntity {
     private static final String SINK_KEY = "Sink";
     private static final String DIRECTION_KEY = "Direction";
     private static final String CHANNEL_KEY = "Channel";
+
+    // * What the Linked Typewriter files its bindings under
+    private static final String KEYS_KEY = "Keys";
+
     private static CableTypewriterHubBlockEntity clientInstance;
 
     private final Set<String> connectedChannels = new HashSet<>();
     private boolean promiscuousMode = false;
 
+    // * Carries the connection half of the clipboard under the mod's own key
+    // * See CableTypewriterHubConnectionClipboard for why it is not on this class
+    private CableTypewriterHubConnectionClipboard connectionClipboard;
+
     public CableTypewriterHubBlockEntity(final BlockPos pos, final BlockState state) {
         super(CableBlockEntities.CABLE_TYPEWRITER_HUB.get(), pos, state);
+    }
+
+    @Override
+    public void addBehaviours(final List<BlockEntityBehaviour> behaviours) {
+        super.addBehaviours(behaviours);
+        this.connectionClipboard = new CableTypewriterHubConnectionClipboard(this);
+        behaviours.add(this.connectionClipboard);
     }
 
     @Override
@@ -210,20 +226,41 @@ public class CableTypewriterHubBlockEntity extends LinkedTypewriterBlockEntity {
         );
     }
 
-    // * Adds connections on top of the vanilla key binding clipboard data
+    //#region // --- PASTE KEY BINDINGS BACK --- //
     @Override
-    public boolean writeToClipboard(final HolderLookup.Provider registries, final CompoundTag tag, final Direction face) {
-        final boolean wroteKeyBindings = super.writeToClipboard(registries, tag, face);
+    public boolean readFromClipboard(final HolderLookup.Provider registries, final CompoundTag tag,
+                                     final Player player, final Direction face, final boolean simulate) {
+        final boolean sourceIsTypewriter = tag.contains(KEYS_KEY, Tag.TAG_LIST);
+        final boolean readKeyBindings = sourceIsTypewriter
+                && super.readFromClipboard(registries, tag, player, face, simulate);
 
+        if (simulate) {
+            return readKeyBindings;
+        }
+
+        final boolean pastedConnections = this.connectionClipboard != null
+                && this.connectionClipboard.consumePastedConnections();
+
+        if (!readKeyBindings && !pastedConnections && player instanceof final ServerPlayer serverPlayer) {
+            CableServerFeedback.showInvalidOperationMessage(serverPlayer, "drivebysable.invalid_op.invalid_paste");
+        }
+
+        return readKeyBindings;
+    }
+    //#endregion
+
+    //#region // --- THE CONNECTION HALF, DRIVEN BY THE BEHAVIOUR --- //
+    // * Dump every channel and sink into the tag
+    boolean writeConnectionsToClipboard(final CompoundTag tag) {
         if (this.level == null) {
-            return wroteKeyBindings;
+            return false;
         }
 
         final Map<String, Set<CableNetworkSink>> perChannel = CableNetworkManager.get(this.level)
                 .getNetwork()
                 .get(this.getBlockPos().asLong());
         if (perChannel == null || perChannel.isEmpty()) {
-            return wroteKeyBindings;
+            return false;
         }
 
         final ListTag connections = new ListTag();
@@ -238,7 +275,7 @@ public class CableTypewriterHubBlockEntity extends LinkedTypewriterBlockEntity {
         }
 
         if (connections.isEmpty()) {
-            return wroteKeyBindings;
+            return false;
         }
 
         tag.put(CableHubBlockEntity.CONNECTIONS_KEY, connections);
@@ -246,20 +283,11 @@ public class CableTypewriterHubBlockEntity extends LinkedTypewriterBlockEntity {
         return true;
     }
 
-    //#region // --- PASTE CONNECTIONS BACK --- //
-    // * Simulate only checks if any channel would match
-    // * Real paste shows error if nothing matched
-    @Override
-    public boolean readFromClipboard(final HolderLookup.Provider registries, final CompoundTag tag, final Player player, final Direction face, final boolean simulate) {
-        // * Presence of Keys means source was a typewriter hub
-        final boolean sourceIsTypewriter = tag.contains("Keys", Tag.TAG_LIST);
-        final boolean readKeyBindings = sourceIsTypewriter && super.readFromClipboard(registries, tag, player, face, simulate);
-
+    boolean applyConnectionsFromClipboard(final CompoundTag tag, final Player player, final boolean simulate) {
         if (this.level == null) {
-            return readKeyBindings;
+            return false;
         }
 
-        // * No connections key at all means source had nothing to copy, still counts as invalid
         final ListTag connections = tag.contains(CableHubBlockEntity.CONNECTIONS_KEY, Tag.TAG_LIST)
                 ? tag.getList(CableHubBlockEntity.CONNECTIONS_KEY, Tag.TAG_COMPOUND)
                 : new ListTag();
@@ -284,15 +312,8 @@ public class CableTypewriterHubBlockEntity extends LinkedTypewriterBlockEntity {
             }
         }
 
-        if (simulate) {
-            return readKeyBindings || anyChannelMatched;
-        }
-
-        // * Typewriter to typewriter never errors
-        if (!anyChannelMatched && !sourceIsTypewriter) {
-            // * Flash the error and play the deny sound
-            CableServerFeedback.showInvalidOperationMessage((ServerPlayer) player, "drivebysable.invalid_op.invalid_paste");
-            return false;
+        if (simulate || !anyChannelMatched) {
+            return anyChannelMatched;
         }
 
         for (final Tag entry : connections) {
@@ -320,7 +341,7 @@ public class CableTypewriterHubBlockEntity extends LinkedTypewriterBlockEntity {
 
         return true;
     }
-    // #endregion
+    //#endregion
 
     //#region // --- COMPUTER CRAFT COMPAT --- //
     // * Promiscuous mode allows the typewriter hub to relay all key events to
@@ -339,8 +360,4 @@ public class CableTypewriterHubBlockEntity extends LinkedTypewriterBlockEntity {
         return clientInstance;
     }
 
-    @Override
-    public String getClipboardKey() {
-        return CableHubBlockEntity.CLIPBOARD_KEY;
-    }
 }
