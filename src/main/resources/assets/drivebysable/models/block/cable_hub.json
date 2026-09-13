@@ -138,12 +138,17 @@
 			"scale": [0.625, 0.625, 0.625]
 		},
 		"head": {
-			"rotation": [0, 180, 0],
+			"rotation": [0, -180, 0],
 			"translation": [0, 10.75, 0]
 		},
 		"fixed": {
 			"rotation": [-90, 0, 0],
-			"translation": [0, 0, -7.5]
+			"translation": [0, 0, -7.5],
+			"scale": [1.25, 1.25, 1.25]
+		},
+		"on_shelf": {
+			"rotation": [90, 0, 0],
+			"translation": [0, 0, 4]
 		}
 	},
 	"groups": [
