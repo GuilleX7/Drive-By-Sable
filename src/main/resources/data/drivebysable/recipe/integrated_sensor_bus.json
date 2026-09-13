@@ -4,7 +4,8 @@
     { "type": "drivebysable:config", "option": "multi_channel_cable_bus", "expected": true },
     { "type": "neoforge:mod_loaded", "modid": "simulated" }
   ],
-  "type": "minecraft:crafting_shaped",
+  "type": "create:mechanical_crafting",
+  "accept_mirrored": true,
   "category": "redstone",
   "key": {
     "A": { "item": "simulated:gimbal_sensor" },
@@ -16,9 +17,12 @@
     "G": { "item": "drivebysable:multi_channel_cable_bus" }
   },
   "pattern": [
-    "AEB",
-    "CGC",
-    "FDF"
+    "FAEDF",
+    " BGB ",
+    "FCECF",
+    "     ",
+    "     "
   ],
-  "result": { "count": 1, "id": "drivebysable:integrated_sensor_bus" }
+  "result": { "count": 1, "id": "drivebysable:integrated_sensor_bus" },
+  "show_notification": false
 }

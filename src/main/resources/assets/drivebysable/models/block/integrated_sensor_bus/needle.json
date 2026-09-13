@@ -1,0 +1,27 @@
+{
+	"credit": "Made with Blockbench",
+	"texture_size": [128, 128],
+	"textures": {
+		"0": "drivebysable:block/integrated_sensor_bus"
+	},
+	"elements": [
+		{
+			"name": "needle",
+			"from": [-0.5, 0.7, -4.5],
+			"to": [0.5, 0.7, 1.5],
+			"rotation": {"angle": 0, "axis": "y", "origin": [8, 8, 8]},
+			"faces": {
+				"up": {"uv": [14.5, 1.875, 14.375, 1.125], "rotation": 180, "texture": "#0"}
+			}
+		}
+	],
+	"groups": [
+		{
+			"name": "needle",
+			"origin": [8, 8, 8],
+			"scope": 0,
+			"color": 0,
+			"children": [0]
+		}
+	]
+}

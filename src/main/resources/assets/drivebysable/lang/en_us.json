@@ -58,6 +58,7 @@
   "drivebysable.cable_actions.confirm_output": "%s to confirm Output",
   "drivebysable.cable_actions.choose_output_channel": "%s to choose Output Channel",
   "drivebysable.cable_actions.select_channel_group": "%s to change Channel Group",
+  "drivebysable.cable_actions.cancel_selection": "%s to exit Channel Select",
 
   "drivebysable.cable_cutter_actions.header": "Cable Cutter Actions",
   "drivebysable.cable_cutter_actions.enter_select": "%s to enter Channel Select Mode",
@@ -99,6 +100,22 @@
   "block.drivebysable.network_anchor.tooltip.behaviour2": "Clears saved _connection data_.",
   "block.drivebysable.network_anchor.tooltip.condition3": "When saved in a schematic file",
   "block.drivebysable.network_anchor.tooltip.behaviour3": "Stores saved _Network data_ to be loaded after a schematic is placed. Data is loaded _automatically_ on schematic placement. Does not work with the _Schematicannon_.",
+
+  "block.drivebysable.multi_channel_cable_bus.tooltip.summary": "Contains _100 available channels_ that can be connected to via _Cable_. Useful for _bridging_ or _consolidating_ a large number of connections.",
+  "block.drivebysable.multi_channel_cable_bus.tooltip.condition1": "When selected as a Output",
+  "block.drivebysable.multi_channel_cable_bus.tooltip.behaviour1": "Will take in an _external redstone signal_ and pass it through any of its channels",
+  "block.drivebysable.multi_channel_cable_bus.tooltip.condition2": "When selected as a Source",
+  "block.drivebysable.multi_channel_cable_bus.tooltip.behaviour2": "Sends a signal out on any of its _Output channels_ that was passed in from matching _Input channel_.",
+
+  "block.drivebysable.integrated_sensor_bus.tooltip.summary": "A more powerful version of the _Multi-Channel Cable Bus_. Contains _13 extra channels_ that match the functionality of the various _Sensor block_ types.",
+  "block.drivebysable.integrated_sensor_bus.tooltip.condition1": "When selected as a Output",
+  "block.drivebysable.integrated_sensor_bus.tooltip.behaviour1": "Will take in an _external redstone signal_ and pass it through any of its channels",
+  "block.drivebysable.integrated_sensor_bus.tooltip.condition2": "When selected as a Source",
+  "block.drivebysable.integrated_sensor_bus.tooltip.behaviour2": "Sends a signal out on any of its _Output channels_ that was passed in from matching _Input channel_.",
+  "block.drivebysable.integrated_sensor_bus.tooltip.condition3": "When R-Clicked",
+  "block.drivebysable.integrated_sensor_bus.tooltip.behaviour3": "Opens the manual _Configuration Interface_. _Maximum_ and _Minimum_ values are used for calculating _output signals_.",
+  "block.drivebysable.integrated_sensor_bus.tooltip.condition4": "While wearing Goggles",
+  "block.drivebysable.integrated_sensor_bus.tooltip.behaviour4": "Displays useful _Sensor readout data_.",
 
   "drivebysable.ponder.tag.main": "Cable Networking Tools",
   "drivebysable.ponder.tag.main.description": "Cable-based redstone networking, no frequencies required",

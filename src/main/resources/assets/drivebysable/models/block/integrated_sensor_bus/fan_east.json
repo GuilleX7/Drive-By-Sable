@@ -1,0 +1,42 @@
+{
+	"credit": "Made with Blockbench",
+	"texture_size": [128, 128],
+	"textures": {
+		"0": "drivebysable:block/integrated_sensor_bus"
+	},
+	"elements": [
+		{
+			"name": "fan",
+			"from": [14.5, 9, 2],
+			"to": [14.5, 14, 7],
+			"rotation": {"angle": 0, "axis": "y", "origin": [13.5, 12, 5]},
+			"faces": {
+				"east": {"uv": [14.625, 7.125, 15.25, 7.75], "texture": "#0"},
+				"west": {"uv": [14.625, 7.75, 15.25, 7.125], "texture": "#0"}
+			}
+		},
+		{
+			"name": "axle",
+			"from": [11.5, 11, 4],
+			"to": [15.5, 12, 5],
+			"rotation": {"angle": 0, "axis": "y", "origin": [11.5, 12, 5]},
+			"faces": {
+				"north": {"uv": [14.625, 6.875, 15.125, 7], "texture": "#0"},
+				"east": {"uv": [14.625, 6.875, 14.75, 7], "texture": "#0"},
+				"south": {"uv": [14.625, 6.875, 15.125, 7], "texture": "#0"},
+				"west": {"uv": [15, 6.875, 15.125, 7], "texture": "#0"},
+				"up": {"uv": [15.125, 7, 14.625, 6.875], "texture": "#0"},
+				"down": {"uv": [15.125, 6.875, 14.625, 7], "texture": "#0"}
+			}
+		}
+	],
+	"groups": [
+		{
+			"name": "velocity2",
+			"origin": [16, 14, 7],
+			"scope": 0,
+			"color": 0,
+			"children": [0, 1]
+		}
+	]
+}

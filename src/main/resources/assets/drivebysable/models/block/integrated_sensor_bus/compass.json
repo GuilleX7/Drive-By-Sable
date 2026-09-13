@@ -1,0 +1,45 @@
+{
+	"credit": "Made with Blockbench",
+	"texture_size": [128, 128],
+	"textures": {
+		"0": "drivebysable:block/integrated_sensor_bus"
+	},
+	"elements": [
+		{
+			"name": "compass_exterior",
+			"from": [-5.5, -2.5, -5.5],
+			"to": [5.5, 1.5, 5.5],
+			"rotation": {"angle": 0, "axis": "y", "origin": [8, 8, 8]},
+			"faces": {
+				"north": {"uv": [14.5, 1.375, 15.875, 1.875], "texture": "#0"},
+				"east": {"uv": [14.5, 1.375, 15.875, 1.875], "texture": "#0"},
+				"south": {"uv": [14.5, 1.375, 15.875, 1.875], "texture": "#0"},
+				"west": {"uv": [14.5, 1.375, 15.875, 1.875], "texture": "#0"},
+				"up": {"uv": [15.875, 1.375, 14.5, 0], "texture": "#0"},
+				"down": {"uv": [14.625, 1.75, 14.5, 1.875], "texture": "#0"}
+			}
+		},
+		{
+			"name": "compass_interior",
+			"from": [-4.55, 1.5, -4.55],
+			"to": [4.55, 0.5, 4.55],
+			"rotation": {"angle": 0, "axis": "y", "origin": [8, 8, 8]},
+			"faces": {
+				"north": {"uv": [15.875, 0.125, 16, 1.25], "rotation": 90, "texture": "#0"},
+				"east": {"uv": [15.875, 0.125, 16, 1.25], "rotation": 90, "texture": "#0"},
+				"south": {"uv": [15.875, 0.125, 16, 1.25], "rotation": 90, "texture": "#0"},
+				"west": {"uv": [15.875, 0.125, 16, 1.25], "rotation": 90, "texture": "#0"},
+				"up": {"uv": [14.5, 1.125, 13.375, 0], "texture": "#0"}
+			}
+		}
+	],
+	"groups": [
+		{
+			"name": "compass",
+			"origin": [8, 8, 8],
+			"scope": 0,
+			"color": 0,
+			"children": [0, 1]
+		}
+	]
+}
