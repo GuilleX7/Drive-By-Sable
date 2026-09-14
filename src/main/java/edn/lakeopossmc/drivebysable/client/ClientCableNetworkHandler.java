@@ -11,6 +11,7 @@ import com.simibubi.create.content.trains.track.TrackBlockOutline;
 import edn.lakeopossmc.drivebysable.CableBlocks;
 import edn.lakeopossmc.drivebysable.CableConfig;
 import edn.lakeopossmc.drivebysable.CableItems;
+import edn.lakeopossmc.drivebysable.util.CableSelectionMark;
 import edn.lakeopossmc.drivebysable.DriveBySableMod;
 import edn.lakeopossmc.drivebysable.client.screen.ChannelQuickSelectScreen;
 import edn.lakeopossmc.drivebysable.blocks.IntegratedSensorBusBlockEntity;
@@ -28,6 +29,7 @@ import edn.lakeopossmc.drivebysable.items.CableCutterItem;
 import edn.lakeopossmc.drivebysable.mixinducks.TweakedControllerDuck;
 import edn.lakeopossmc.drivebysable.network.CableAddConnectionPacket;
 import edn.lakeopossmc.drivebysable.network.CableNetworkRequestSyncPacket;
+import edn.lakeopossmc.drivebysable.network.CableSelectionMarkPacket;
 import edn.lakeopossmc.drivebysable.network.CableSelectionStatePacket;
 import edn.lakeopossmc.drivebysable.network.MovementKeybindsPacket;
 import edn.lakeopossmc.drivebysable.network.TweakedKeybindsPacket;
@@ -117,6 +119,9 @@ public final class ClientCableNetworkHandler {
     // * Null when the whole block is the source
     private static String selectedSourceModule;
 
+    private static String rememberedChannel;
+    private static String rememberedChannelGroup;
+
     // * Which slice of a grouped source the cable is scrolling through
     private static String currentChannelGroup;
 
@@ -148,7 +153,9 @@ public final class ClientCableNetworkHandler {
 
     @SubscribeEvent
     public static void onWorldUnload(final LevelEvent.Unload event) {
-        clearSource();
+        rememberedChannel = null;
+        rememberedChannelGroup = null;
+        resetSourceState();
     }
 
     //#region // --- MAIN CLICK HANDLING --- //
@@ -358,7 +365,7 @@ public final class ClientCableNetworkHandler {
         }
 
         final ItemStack mainHand = player.getMainHandItem();
-        final boolean holdingCableTool = mainHand.is(CableItems.CABLE.get()) || mainHand.is(CableItems.CABLE_CUTTER.get());
+        final boolean holdingCableTool = isCableTool(mainHand);
         final boolean holdingClipboard = AllBlocks.CLIPBOARD.isIn(mainHand);
 
         // * Only meaningful while a source is selected
@@ -421,8 +428,11 @@ public final class ClientCableNetworkHandler {
             }
         }
 
-        if (!holdingCableTool) {
-            clearSource();
+        // * Parked rather than dropped
+        if (holdingCableTool) {
+            resumeSource(level, mainHand);
+        } else {
+            suspendSource();
         }
 
         // * Clipboard needs sync request
@@ -654,7 +664,23 @@ public final class ClientCableNetworkHandler {
 
     //#endregion
 
+    // * Drops the selection for good and takes the mark off the tool
     public static void clearSource() {
+        PacketDistributor.sendToServer(CableSelectionMarkPacket.clear());
+
+        final Player player = Minecraft.getInstance().player;
+        if (player != null) {
+            // * Written locally as well so the glint goes out this frame
+            CableSelectionMark.remove(player.getMainHandItem());
+            CableSelectionMark.remove(player.getOffhandItem());
+        }
+
+        rememberedChannel = null;
+        rememberedChannelGroup = null;
+        resetSourceState();
+    }
+
+    private static void resetSourceState() {
         reportSelection(false);
         moduleOutlines.clear();
         currentNetwork = EMPTY_NETWORK;
@@ -673,7 +699,75 @@ public final class ClientCableNetworkHandler {
         armedSinkFace = null;
     }
 
-    // * Used by CableItem for the enchant glint while a source is selected
+    //#region // --- SELECTION MEMORY --- //
+    private static boolean isCableTool(final ItemStack stack) {
+        return stack.is(CableItems.CABLE.get()) || stack.is(CableItems.CABLE_CUTTER.get());
+    }
+
+    // * Puts the source on the tool
+    private static void markSelectingStack(final Player player, final ItemStack stack, final BlockPos pos, final String module) {
+        PacketDistributor.sendToServer(CableSelectionMarkPacket.of(pos, module));
+
+        if (isCableTool(stack)) {
+            CableSelectionMark.put(stack, pos, module, player.level().dimension());
+        }
+    }
+
+    // * Tool went away
+    private static void suspendSource() {
+        if (selectedSource == null) {
+            return;
+        }
+
+        rememberedChannel = currentChannel;
+        rememberedChannelGroup = currentChannelGroup;
+        resetSourceState();
+    }
+
+    // * Tool came back
+    private static void resumeSource(final Level level, final ItemStack tool) {
+        if (selectedSource != null) {
+            return;
+        }
+
+        final CableSelectionMark.Selection mark = CableSelectionMark.get(tool);
+        if (mark == null) {
+            return;
+        }
+
+        // * Carried into another world
+        if (!level.dimension().equals(mark.dimension())) {
+            return;
+        }
+
+        // * Chunk may not be loaded yet. Worth waiting
+        if (!level.hasChunkAt(mark.source())) {
+            return;
+        }
+
+        // * Source was mined, or the module it was made on is gone
+        if (level.getBlockState(mark.source()).isAir()
+                || (mark.module() != null && !isSourceSubTarget(level, mark.source(), mark.module()))) {
+            clearSource();
+            return;
+        }
+
+        selectedSource = mark.source();
+        selectedSourceModule = mark.module();
+        currentChannelGroup = rememberedChannelGroup;
+        currentChannel = rememberedChannel == null ? CableNetworkManager.WORLD_CHANNEL : rememberedChannel;
+
+        final List<String> channels = selectableChannels(level);
+        if (!channels.isEmpty() && !channels.contains(currentChannel)) {
+            currentChannel = channels.getFirst();
+        }
+
+        reportSelection(true);
+        clearArmedSink();
+        syncManager();
+    }
+    //#endregion
+
     public static boolean isInSetupMode() {
         return selectedSource != null;
     }
@@ -783,6 +877,7 @@ public final class ClientCableNetworkHandler {
             selectedSource = pos.immutable();
             reportSelection(true);
             selectedSourceModule = subTarget;
+            markSelectingStack(player, heldItem, selectedSource, subTarget);
             clearArmedSink();
             changeChannel(level.getBlockState(pos).getBlock(), true);
             syncManager();
@@ -853,6 +948,7 @@ public final class ClientCableNetworkHandler {
             selectedSource = pos.immutable();
             reportSelection(true);
             selectedSourceModule = subTarget;
+            markSelectingStack(player, player.getMainHandItem(), selectedSource, subTarget);
             clearArmedSink();
             changeChannel(level.getBlockState(pos).getBlock(), true);
             syncManager();

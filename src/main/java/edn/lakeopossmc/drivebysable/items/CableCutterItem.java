@@ -6,6 +6,7 @@ import edn.lakeopossmc.drivebysable.cable.CableSelectionTracker;
 import edn.lakeopossmc.drivebysable.cable.SubTargetCableEndpoint;
 import edn.lakeopossmc.drivebysable.cable.CableServerFeedback;
 import edn.lakeopossmc.drivebysable.cable.graph.CableNetworkNode.CableNetworkSink;
+import edn.lakeopossmc.drivebysable.util.CableSelectionMark;
 import net.minecraft.ChatFormatting;
 import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.client.resources.language.I18n;
@@ -37,6 +38,11 @@ public class CableCutterItem extends Item {
     //#region // --- ITEM PROPERTIES SETUP --- //
     public CableCutterItem(final Properties properties) {
         super(properties);
+    }
+
+    @Override
+    public boolean isFoil(final ItemStack stack) {
+        return CableSelectionMark.has(stack);
     }
     //#endregion
 

@@ -1,7 +1,7 @@
 package edn.lakeopossmc.drivebysable.items;
 
 import com.simibubi.create.foundation.item.TooltipHelper;
-import edn.lakeopossmc.drivebysable.client.ClientCableNetworkHandler;
+import edn.lakeopossmc.drivebysable.util.CableSelectionMark;
 import net.minecraft.ChatFormatting;
 import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.network.chat.Component;
@@ -12,8 +12,6 @@ import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.TooltipFlag;
 import net.minecraft.world.item.context.UseOnContext;
-import net.neoforged.api.distmarker.Dist;
-import net.neoforged.fml.loading.FMLLoader;
 
 import java.util.List;
 
@@ -40,14 +38,9 @@ public class CableItem extends Item {
         return InteractionResult.sidedSuccess(context.getLevel().isClientSide());
     }
 
-    // * Glint while a source is selected
     @Override
     public boolean isFoil(final ItemStack stack) {
-        if (FMLLoader.getDist() != Dist.CLIENT) return false;
-        if (!ClientCableNetworkHandler.isInSetupMode()) return false;
-        final net.minecraft.client.Minecraft mc = net.minecraft.client.Minecraft.getInstance();
-        if (mc.player == null) return false;
-        return mc.player.getMainHandItem() == stack || mc.player.getOffhandItem() == stack;
+        return CableSelectionMark.has(stack);
     }
 
     @Override
