@@ -14,7 +14,6 @@ import net.minecraft.world.level.Level;
 import javax.annotation.Nullable;
 
 // --- THE SELECTED SOURCE WRITTEN ONTO THE TOOL --- //
-
 public final class CableSelectionMark {
     private static final String ROOT_KEY = "DriveBySableSelection";
     private static final String POS_KEY = "Pos";
@@ -84,6 +83,18 @@ public final class CableSelectionMark {
 
         root.put(ROOT_KEY, mark);
         stack.set(DataComponents.CUSTOM_DATA, CustomData.of(root));
+    }
+
+    // * Hands the selection from one tool to another
+    public static boolean transfer(final ItemStack from, final ItemStack to) {
+        final Selection selection = get(from);
+        if (selection == null || to.isEmpty()) {
+            return false;
+        }
+
+        put(to, selection.source(), selection.module(), selection.dimension());
+        remove(from);
+        return true;
     }
 
     public static void remove(final ItemStack stack) {

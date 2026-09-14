@@ -726,11 +726,20 @@ public final class ClientCableNetworkHandler {
 
     // * Tool came back
     private static void resumeSource(final Level level, final ItemStack tool) {
+        final CableSelectionMark.Selection mark = CableSelectionMark.get(tool);
+
         if (selectedSource != null) {
-            return;
+            final boolean sameSelection = mark != null
+                    && selectedSource.equals(mark.source())
+                    && Objects.equals(selectedSourceModule, mark.module());
+
+            if (sameSelection) {
+                return;
+            }
+
+            suspendSource();
         }
 
-        final CableSelectionMark.Selection mark = CableSelectionMark.get(tool);
         if (mark == null) {
             return;
         }
