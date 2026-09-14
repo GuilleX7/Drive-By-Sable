@@ -95,7 +95,11 @@ public final class IntegratedSensorBusBlock extends BaseEntityBlock
     ) {
         // * Telemetry has to be sampled, unlike everything else here which is pushed
         if (level.isClientSide()) {
-            return null;
+            return (tickLevel, pos, tickState, blockEntity) -> {
+                if (blockEntity instanceof IntegratedSensorBusBlockEntity sensor) {
+                    sensor.tickAnimation();
+                }
+            };
         }
 
         return (tickLevel, pos, tickState, blockEntity) -> {

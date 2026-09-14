@@ -1,24 +1,36 @@
 package edn.lakeopossmc.drivebysable.blocks;
 
 import com.simibubi.create.api.equipment.goggles.IHaveGoggleInformation;
+import dev.ryanhcode.sable.Sable;
+import dev.ryanhcode.sable.companion.math.Pose3dc;
+import dev.ryanhcode.sable.physics.config.dimension_physics.DimensionPhysicsData;
+import dev.ryanhcode.sable.sublevel.SubLevel;
 import edn.lakeopossmc.drivebysable.CableBlockEntities;
 import edn.lakeopossmc.drivebysable.compat.computercraft.ComputerCraftCompat;
 import edn.lakeopossmc.drivebysable.client.NavigationTargetClientState;
 import edn.lakeopossmc.drivebysable.network.NavigationTargetSyncPacket;
 import edn.lakeopossmc.drivebysable.network.SensorBusSettingsSyncPacket;
 import edn.lakeopossmc.drivebysable.cable.CableNetworkManager;
+import net.createmod.catnip.animation.LerpedFloat;
+import net.createmod.catnip.animation.LerpedFloat.Chaser;
+import net.createmod.catnip.math.VecHelper;
 import net.minecraft.ChatFormatting;
 import net.minecraft.core.BlockPos;
+import net.minecraft.core.Direction;
 import net.minecraft.core.HolderLookup;
 import net.minecraft.nbt.CompoundTag;
+import net.minecraft.util.Mth;
+import net.minecraft.util.RandomSource;
 import net.minecraft.network.chat.Component;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.level.block.entity.BlockEntity;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.phys.Vec3;
+import org.joml.Quaterniond;
 import org.joml.Quaterniondc;
 import org.joml.Quaternionf;
 import org.joml.Vector3d;
+import org.joml.Vector3dc;
 import org.joml.Vector3f;
 import org.jetbrains.annotations.Nullable;
 
@@ -842,6 +854,433 @@ public final class IntegratedSensorBusBlockEntity extends BlockEntity implements
         );
     }
 
+    //#region // --- WHAT THE RENDERER DRAWS --- //
+    // * Client side only
+    private float fanAngle;
+    private float oldFanAngle;
+
+    private float handAngle;
+    private float oldHandAngle;
+
+    private static final float PIXEL = 1.0F / 16.0F;
+
+    //#region // --- FANS --- //
+    private final LerpedFloat fanSpeed = LerpedFloat.linear().chase(0.0, 0.5, Chaser.EXP);
+
+    // * Below this the sensor calls it still, so the fan does not creep
+    private static final double FAN_DEADZONE = 0.05;
+
+    private static final float RETURN_TO_REST = 0.15F;
+    private static final float FULL_TURN = (float) (Math.PI * 2.0);
+
+    // * Close enough to home to stop bothering
+    private static final float REST_EPSILON = 0.001F;
+
+    // * The fan only starts walking home once it is turning this slowly
+    private static final float FAN_SETTLE_BELOW = 0.05F;
+
+    // * How far past the nearest whole turn an angle sits
+    private static double shortestTurn(final double radians) {
+        double wrapped = radians % FULL_TURN;
+        if (wrapped > FULL_TURN / 2.0) {
+            wrapped -= FULL_TURN;
+        }
+        if (wrapped < -FULL_TURN / 2.0) {
+            wrapped += FULL_TURN;
+        }
+        return wrapped;
+    }
+
+    public float getFanAngle(final float partialTicks) {
+        return Mth.lerp(partialTicks, oldFanAngle, fanAngle);
+    }
+
+    private double axleVelocity(final FlightData data) {
+        final double along = isLocalFrame()
+                ? localAxleVelocity(data)
+                : globalAxleVelocity(data);
+
+        return Math.abs(along) > FAN_DEADZONE ? along : 0.0;
+    }
+
+    private double localAxleVelocity(final FlightData data) {
+        // * localForwardSpeed is negated ship-local Z, so ship-local +Z is its negative
+        return switch (getBlockState().getValue(IntegratedSensorBusBlock.FACING)) {
+            case NORTH -> data.localRightSpeed();
+            case EAST -> -data.localForwardSpeed();
+            case SOUTH -> -data.localRightSpeed();
+            case WEST -> data.localForwardSpeed();
+            default -> 0.0;
+        };
+    }
+
+    private double globalAxleVelocity(final FlightData data) {
+        final Vector3d axle = worldAxleDirection();
+        return axle.x * data.velocityX() + axle.y * data.velocityY() + axle.z * data.velocityZ();
+    }
+
+    // * Block-local +X, turned by the facing and then by the hull's own orientation
+    private Vector3d worldAxleDirection() {
+        final Vector3d axle = new Vector3d(1.0, 0.0, 0.0)
+                .rotateY(Math.toRadians(baseFacingDegrees()));
+
+        final SubLevel subLevel = Sable.HELPER.getContaining(this);
+        if (subLevel != null) {
+            subLevel.logicalPose().orientation().transform(axle);
+        }
+
+        return axle;
+    }
+
+    private float baseFacingDegrees() {
+        return 180.0F - getBlockState().getValue(IntegratedSensorBusBlock.FACING).toYRot();
+    }
+    //#endregion
+
+    //#region // --- ALTITUDE HANDS --- //
+    private static final float HAND_FACE_PIXELS = 5.0F;
+    private static final float HAND_HEIGHT_PIXELS = 1.0F;
+    private static final float HAND_EDGE_MARGIN_PIXELS = 0.5F;
+    private static final float HAND_TRAVEL_PIXELS =
+            (HAND_FACE_PIXELS - HAND_HEIGHT_PIXELS) / 2.0F - HAND_EDGE_MARGIN_PIXELS;
+    //#endregion
+
+    // * In block units, so the renderer can add it straight onto the pivot
+    public float getAltitudeHandOffset(final float partialTicks) {
+        return Mth.lerp(partialTicks, oldHandAngle, handAngle);
+    }
+
+    //#region // --- GIMBAL ORIENTATION --- //
+    private static final Vector3d ANGLE_INERTIA = new Vector3d(110.0, 110.0, 34.0);
+    private static final Vector3d ANGLE_DAMPING = new Vector3d(0.2, 0.2, 0.2);
+
+    // * Extra kick the needle gets in a dimension with no north to find
+    private static final double COMPASS_RANDOM_TORQUE = 2.1;
+
+    private static final float GIMBAL_MODEL_QUARTER_TURN = 90.0F;
+
+    private final Vector3d eulerAngles = new Vector3d();
+    private final Vector3d previousAngles = new Vector3d();
+    private final Vector3d angleVelocities = new Vector3d();
+    private final CompassTarget compassTarget = new CompassTarget();
+    private Quaterniond lastShellOrientation;
+    private boolean gimbalNudged;
+    private boolean gimbalResting;
+
+    public Quaternionf getBaseQuaternion() {
+        return new Quaternionf().rotateY((float) Math.toRadians(baseAngleDegrees()));
+    }
+
+    private float baseAngleDegrees() {
+        return baseFacingDegrees() - GIMBAL_MODEL_QUARTER_TURN;
+    }
+
+    public Quaternionf applyPrimaryQuaternion(final Quaternionf orientation, final float partialTicks) {
+        orientation.rotateZ(gimbalLerp((float) previousAngles.x, (float) eulerAngles.x, partialTicks));
+        return orientation;
+    }
+
+    public Quaternionf applySecondaryQuaternion(final Quaternionf orientation, final float partialTicks) {
+        orientation.rotateX(gimbalLerp((float) previousAngles.y, (float) eulerAngles.y, partialTicks));
+        return orientation;
+    }
+
+    public Quaternionf applyCompassQuaternion(final Quaternionf orientation, final float partialTicks) {
+        orientation.rotateY(gimbalLerp((float) previousAngles.z, (float) eulerAngles.z, partialTicks));
+        return orientation;
+    }
+
+    private static float gimbalLerp(final float from, final float to, final float progress) {
+        return from * (1.0F - progress) + to * progress;
+    }
+
+    private void animateGimbalRotation() {
+        previousAngles.set(eulerAngles);
+
+        // * Switched off
+        if (!isAngleEnabled()) {
+            gimbalResting = true;
+            restGimbal();
+            return;
+        }
+
+        if (!gimbalNudged) {
+            gimbalNudged = true;
+            randomNudge();
+        } else if (gimbalResting) {
+            // * Coming back from rest
+            gimbalResting = false;
+            kickGimbal();
+        }
+
+        final SubLevel subLevel = Sable.HELPER.getContaining(this);
+        final Pose3dc pose = subLevel == null ? null : subLevel.logicalPose();
+
+        final Vector3d shellVelocity = getShellVelocity(subLevel);
+        final Vector3d acceleration = new Vector3d();
+
+        addGravityTorque(pose, acceleration);
+
+        compassTarget.update(worldCentre(pose), level);
+        final Vector3d target = new Vector3d();
+        compassTarget.getTarget(target);
+        addCompassTorque(pose, acceleration, target);
+        if (compassTarget.isRandom()) {
+            acceleration.z += (2.0F * level.random.nextFloat() - 1.0F) * COMPASS_RANDOM_TORQUE;
+        }
+
+        acceleration.div(ANGLE_INERTIA);
+
+        // * Damping is measured against the hull
+        final Vector3d relativeVelocity = angleVelocities.add(shellVelocity, new Vector3d());
+        final Vector3d currentDamping = relativeVelocity.mul(ANGLE_DAMPING);
+        angleVelocities.add(acceleration).sub(currentDamping);
+
+        final Vector3d totalVelocity = angleVelocities.add(shellVelocity, new Vector3d());
+        eulerAngles.add(totalVelocity);
+
+        final double limit = Math.abs(Math.toRadians(getMaxAngle()));
+        collide(eulerAngles, totalVelocity, 1, limit);
+        collide(eulerAngles, totalVelocity, 0, limit);
+
+        totalVelocity.sub(shellVelocity, angleVelocities);
+    }
+
+    private void randomNudge() {
+        kickGimbal();
+        eulerAngles.set(0.0, 0.0, level.random.nextFloat() * Math.PI * 2.0);
+    }
+
+    private void kickGimbal() {
+        final Vec3 nudge = VecHelper.offsetRandomly(Vec3.ZERO, level.random, 0.2F);
+        angleVelocities.set(nudge.x, nudge.y, nudge.z);
+    }
+
+    private void restGimbal() {
+        angleVelocities.set(0.0, 0.0, 0.0);
+        lastShellOrientation = null;
+
+        eulerAngles.x -= eulerAngles.x * RETURN_TO_REST;
+        eulerAngles.y -= eulerAngles.y * RETURN_TO_REST;
+        eulerAngles.z -= shortestTurn(eulerAngles.z) * RETURN_TO_REST;
+    }
+
+    // * Gravity pulls the rings level
+    private void addGravityTorque(@Nullable final Pose3dc pose, final Vector3d torque) {
+        final Vector3dc globalPosition = Sable.HELPER.projectOutOfSubLevel(level, new Vector3d(
+                worldPosition.getX() + 0.5,
+                worldPosition.getY() + 0.5,
+                worldPosition.getZ() + 0.5));
+        final Vector3d localGravity = new Vector3d(DimensionPhysicsData.getGravity(level, globalPosition));
+
+        transformBaseInverse(localGravity, pose);
+        transformPrimaryInverse(localGravity);
+
+        final Vector3d localDown = new Vector3d(0.0, -1.0, 0.0).rotateX(eulerAngles.y);
+        final Vector3d localTorque = localDown.cross(localGravity);
+
+        torque.x += localTorque.z;
+        torque.y += localTorque.x;
+    }
+
+    private void addCompassTorque(@Nullable final Pose3dc pose, final Vector3d torque, final Vector3d target) {
+        transformBaseInverse(target, pose);
+        transformPrimaryInverse(target);
+        transformSecondaryInverse(target);
+        transformCompassInverse(target);
+
+        final Vector3d localTorque = new Vector3d(0.0, 0.0, -1.0).cross(target);
+        torque.z += localTorque.y;
+    }
+
+    private Vector3d getShellVelocity(@Nullable final SubLevel subLevel) {
+        final Vector3d shellVelocity = new Vector3d();
+        if (subLevel == null) {
+            lastShellOrientation = null;
+            return shellVelocity;
+        }
+
+        final Pose3dc pose = subLevel.logicalPose();
+        if (lastShellOrientation == null) {
+            lastShellOrientation = new Quaterniond(pose.orientation());
+            return shellVelocity;
+        }
+
+        final Quaterniond rotationDiff = lastShellOrientation.div(pose.orientation(), new Quaterniond());
+        final Vector3d angularVelocity =
+                new Vector3d(rotationDiff.x, rotationDiff.y, rotationDiff.z).mul(2.0);
+
+        transformBaseInverse(angularVelocity, pose);
+        shellVelocity.x = angularVelocity.z;
+        transformPrimaryInverse(angularVelocity);
+        shellVelocity.y = angularVelocity.x;
+        transformSecondaryInverse(angularVelocity);
+        shellVelocity.z = angularVelocity.y;
+
+        lastShellOrientation.set(pose.orientation());
+        return shellVelocity;
+    }
+
+    // * A stop with a little bounce left in it
+    private static void collide(
+            final Vector3d position,
+            final Vector3d velocity,
+            final int index,
+            final double limit
+    ) {
+        double p = position.get(index);
+        double v = velocity.get(index);
+        final double sign = p > 0.0 ? 1.0 : -1.0;
+
+        p *= sign;
+        v *= sign;
+
+        if (p >= limit) {
+            p = limit;
+            if (v > 0.0) {
+                v *= -0.9;
+            }
+        }
+
+        position.setComponent(index, p * sign);
+        velocity.setComponent(index, v * sign);
+    }
+
+    private Vec3 worldCentre(@Nullable final Pose3dc pose) {
+        final Vec3 centre = Vec3.atCenterOf(worldPosition);
+        return pose == null ? centre : pose.transformPosition(centre);
+    }
+
+    private void transformBaseInverse(final Vector3d vector, @Nullable final Pose3dc pose) {
+        if (pose != null) {
+            pose.orientation().transformInverse(vector);
+        }
+        vector.rotateY(-Math.toRadians(baseAngleDegrees()));
+    }
+
+    private void transformPrimaryInverse(final Vector3d vector) {
+        vector.rotateZ(-eulerAngles.x);
+    }
+
+    private void transformSecondaryInverse(final Vector3d vector) {
+        vector.rotateX(-eulerAngles.y);
+    }
+
+    private void transformCompassInverse(final Vector3d vector) {
+        vector.rotateY(-eulerAngles.z);
+    }
+
+    // * Where the needle is trying to point
+    private static final class CompassTarget {
+        private final Vector3d target = new Vector3d(0.0, 0.0, 0.0);
+        private final Vector3d randomTarget = new Vector3d(0.0, 0.0, 0.0);
+        private int randomTargetTimer;
+        private double randomTargetLength = 3.0;
+        private boolean random;
+
+        private void update(final Vec3 position, final Level currentLevel) {
+            random = !currentLevel.dimensionType().natural();
+            if (!random) {
+                target.set(0.0, 0.0, -1.0);
+                return;
+            }
+
+            final RandomSource source = currentLevel.random;
+            if (randomTargetTimer-- < 0) {
+                randomTarget.set(
+                        (source.nextFloat() - 0.5F) * 2.0F,
+                        (source.nextFloat() - 0.5F) * 2.0F,
+                        (source.nextFloat() - 0.5F) * 2.0F);
+                randomTargetTimer = source.nextInt(5, 15);
+            }
+
+            randomTarget.add(
+                    (source.nextFloat() - 0.5F) * 2.0F * 0.3F,
+                    (source.nextFloat() - 0.5F) * 2.0F * 0.3F,
+                    (source.nextFloat() - 0.5F) * 2.0F * 0.3F);
+            randomTarget.normalize();
+
+            target.mul(0.5).fma(0.5, randomTarget);
+            target.normalize();
+        }
+
+        private boolean isRandom() {
+            return random;
+        }
+
+        private Vector3d getTarget(final Vector3d destination) {
+            return target.mul(random ? randomTargetLength : 1.0, destination);
+        }
+    }
+    //#endregion
+
+    // * Driven by the block's client ticker
+    public void tickAnimation() {
+        oldFanAngle = fanAngle;
+        oldHandAngle = handAngle;
+
+        if (level != null && level.isClientSide) {
+            animateGimbalRotation();
+        }
+
+        final FlightData data = readFlightData();
+        final boolean reading = data.available();
+
+        sampleSpeed(reading ? data.speed() : 0.0);
+
+        // * Chased whether or not the group is on and whether or not the sensor can see
+        final boolean spinning = reading && isSpeedEnabled();
+        final float limit = Math.max(1, getMaxSpeed());
+        fanSpeed.updateChaseTarget(spinning
+                ? Mth.clamp((float) axleVelocity(data) / limit, -1.0F, 1.0F)
+                : 0.0F);
+        fanSpeed.tickChaser();
+        fanAngle += fanSpeed.getValue();
+
+        if (!spinning) {
+            settleFan();
+        }
+
+        if (reading && isAltitudeEnabled()) {
+            handAngle = altitudeHandTarget(data.y());
+        } else {
+            // * Back to the middle of its face
+            handAngle += (0.0F - handAngle) * RETURN_TO_REST;
+            if (Math.abs(handAngle) < REST_EPSILON * PIXEL) {
+                handAngle = 0.0F;
+            }
+        }
+    }
+
+    private void settleFan() {
+        // * Let the chaser bleed the speed off on its own
+        if (Math.abs(fanSpeed.getValue()) > FAN_SETTLE_BELOW) {
+            return;
+        }
+
+        final float residual = (float) shortestTurn(fanAngle);
+        fanAngle -= residual * RETURN_TO_REST;
+
+        if (Math.abs(residual) < REST_EPSILON && Math.abs(fanSpeed.getValue()) < REST_EPSILON) {
+            final float wholeTurns = fanAngle - (float) shortestTurn(fanAngle);
+            fanAngle -= wholeTurns;
+            oldFanAngle -= wholeTurns;
+        }
+    }
+
+    private float altitudeHandTarget(final double worldY) {
+        final int lower = getRangeLower();
+        final int upper = getRangeUpper();
+
+        final double fraction = lower == upper
+                ? (worldY >= upper ? 1.0D : 0.0D)
+                : (worldY - lower) / (double) (upper - lower);
+
+        final double centred = Mth.clamp(fraction, 0.0D, 1.0D) * 2.0D - 1.0D;
+        return (float) (centred * HAND_TRAVEL_PIXELS * PIXEL);
+    }
+    //#endregion
+
     private static final int AVERAGE_SPEED_SAMPLES = 40;
     private final double[] speedSamples = new double[AVERAGE_SPEED_SAMPLES];
     private int speedSampleCount;
@@ -1069,7 +1508,7 @@ public final class IntegratedSensorBusBlockEntity extends BlockEntity implements
     }
 
     // * Was a class of its own upstream
-    // * Values only, never a block or ship updat,
+    // * Values only, never a block or ship update
     private void sendNavigationTarget() {
         final Level currentLevel = getLevel();
         if (currentLevel == null || currentLevel.isClientSide()) {
