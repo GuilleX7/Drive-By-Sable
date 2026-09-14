@@ -1,5 +1,9 @@
 {
   "values": [
-    "drivebysable:backup_drive"
+    "drivebysable:backup_drive",
+    {
+      "id": "drivebysable:cable_typewriter_hub",
+      "required": false
+    }
   ]
 }

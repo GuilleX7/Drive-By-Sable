@@ -1,6 +1,7 @@
 package edn.lakeopossmc.drivebysable.blocks;
 
 import com.simibubi.create.api.equipment.goggles.IHaveGoggleInformation;
+import com.simibubi.create.api.schematic.nbt.PartialSafeNBT;
 import dev.ryanhcode.sable.Sable;
 import dev.ryanhcode.sable.companion.math.Pose3dc;
 import dev.ryanhcode.sable.physics.config.dimension_physics.DimensionPhysicsData;
@@ -45,7 +46,8 @@ import java.util.Map;
 // --- PORTED RELIANTSHELL/AMMAN FEATURE --- //
 // * Stores all sensor data, also handles what gets sent to goggle display
 // * Some comments written before the port are left behind so I can understand stuff
-public final class IntegratedSensorBusBlockEntity extends BlockEntity implements IHaveGoggleInformation {
+public final class IntegratedSensorBusBlockEntity extends BlockEntity
+        implements PartialSafeNBT, IHaveGoggleInformation {
     private static final double RAD_TO_DEG = 180.0 / Math.PI;
     private static final String OUTPUTS_NBT_KEY = "DbwOutputs";
     private static final String INPUTS_NBT_KEY = "BridgedInputs";
@@ -1820,6 +1822,22 @@ public final class IntegratedSensorBusBlockEntity extends BlockEntity implements
         tag.putBoolean(ALTITUDE_ENABLED_NBT_KEY, altitudeEnabled);
         tag.putBoolean(SETTINGS_LOCKED_NBT_KEY, settingsLocked);
     }
+
+    //#region // --- SCHEMATIC SAFE NBT --- //
+    // * Built in code to avoid tag issues
+    @Override
+    public synchronized void writeSafe(final CompoundTag tag, final HolderLookup.Provider registries) {
+        tag.putInt(MAX_SPEED_NBT_KEY, maxSpeed);
+        tag.putInt(MAX_ANGLE_NBT_KEY, maxAngle);
+        tag.putInt(RANGE_LOWER_NBT_KEY, rangeLower);
+        tag.putInt(RANGE_UPPER_NBT_KEY, rangeUpper);
+        tag.putBoolean(LOCAL_FRAME_NBT_KEY, localFrame);
+        tag.putBoolean(SPEED_ENABLED_NBT_KEY, speedEnabled);
+        tag.putBoolean(ANGLE_ENABLED_NBT_KEY, angleEnabled);
+        tag.putBoolean(ALTITUDE_ENABLED_NBT_KEY, altitudeEnabled);
+        tag.putBoolean(SETTINGS_LOCKED_NBT_KEY, settingsLocked);
+    }
+    //#endregion
 
     @Override
     protected synchronized void loadAdditional(CompoundTag tag, HolderLookup.Provider registries) {

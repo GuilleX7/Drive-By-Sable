@@ -45,6 +45,9 @@ public class CableTypewriterHubBlockEntity extends LinkedTypewriterBlockEntity {
     // * What the Linked Typewriter files its bindings under
     private static final String KEYS_KEY = "Keys";
 
+    // * Whoever is at the keyboard right now
+    private static final String CURRENT_USER_KEY = "CurrentUser";
+
     private static CableTypewriterHubBlockEntity clientInstance;
 
     private final Set<String> connectedChannels = new HashSet<>();
@@ -182,6 +185,14 @@ public class CableTypewriterHubBlockEntity extends LinkedTypewriterBlockEntity {
 
             tag.put("PromiscuousMode", this.isInPromiscuousMode() ? ByteTag.ONE : ByteTag.ZERO);
         }
+    }
+
+    @Override
+    public void writeSafe(final CompoundTag tag, final HolderLookup.Provider registries) {
+        this.write(tag, registries, false);
+
+        // * A freshly printed hub should not believe someone is already typing on it
+        tag.remove(CURRENT_USER_KEY);
     }
 
     @Override
