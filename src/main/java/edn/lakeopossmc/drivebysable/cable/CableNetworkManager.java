@@ -41,6 +41,7 @@ import java.util.*;
 import java.util.function.Function;
 import net.minecraft.core.SectionPos;
 import net.minecraft.world.level.ChunkPos;
+import net.minecraft.world.level.chunk.ChunkAccess;
 
 // --- CORE MANAGER FOR THE CABLE NETWORK --- //
 // * One instance per level, server is authoritative, client keeps a mirror
@@ -2265,6 +2266,94 @@ public final class CableNetworkManager {
                         return;
                     }
                 }
+            }
+        }
+    }
+
+    // * Checks graph against the world in loaded chunks and tries to kill orphans
+    public void pruneOrphanedEndpoints(final Level level, final ChunkAccess chunk) {
+        final ChunkPos chunkPos = chunk.getPos();
+
+        final List<BlockPos> orphanedSources = new ArrayList<>();
+        for (final long sourceKey : sinks.keySet()) {
+            final BlockPos pos = BlockPos.of(sourceKey);
+            if (isInChunk(pos, chunkPos) && isOrphanedEndpoint(chunk, pos)) {
+                orphanedSources.add(pos);
+            }
+        }
+
+        final List<Long> orphanedSinks = new ArrayList<>();
+        for (final long sinkKey : sinkReferences.keySet()) {
+            final BlockPos pos = BlockPos.of(sinkKey);
+            if (isInChunk(pos, chunkPos) && isOrphanedEndpoint(chunk, pos)) {
+                orphanedSinks.add(sinkKey);
+            }
+        }
+
+        if (orphanedSources.isEmpty() && orphanedSinks.isEmpty()) {
+            return;
+        }
+
+        for (final BlockPos source : orphanedSources) {
+            removeAllFromSourceInternal(null, level, source);
+        }
+        for (final long sinkKey : orphanedSinks) {
+            dropEverythingIntoSink(level, sinkKey);
+        }
+
+        graphDirty = true;
+        dirtyMarker.run();
+
+        // * Logged in case this doesn't fix ghostly sources
+        DriveBySableMod.LOGGER.info(
+                "[ghost-source] Dropped {} orphaned source(s) and {} orphaned output(s) in chunk {} "
+                        + "of {}, none of which had a block left. Sources: {}. Outputs: {}.",
+                orphanedSources.size(),
+                orphanedSinks.size(),
+                chunkPos,
+                level.dimension().location(),
+                orphanedSources,
+                orphanedSinks.stream().map(BlockPos::of).toList()
+        );
+    }
+
+    // * Air, and not a block that a sublevel assembly is halfway through moving
+    private boolean isOrphanedEndpoint(final ChunkAccess chunk, final BlockPos pos) {
+        return chunk.getBlockState(pos).isAir() && !pendingAssemblyPositions.contains(pos.asLong());
+    }
+
+    // * Every connection pointing at one position, whichever source owns it
+    private void dropEverythingIntoSink(final Level level, final long sinkKey) {
+        final Set<SinkReference> references = sinkReferences.remove(sinkKey);
+        if (references == null) {
+            return;
+        }
+
+        for (final SinkReference reference : references) {
+            final Map<String, Set<CableNetworkSink>> perChannel = sinks.get(reference.sourcePos());
+            if (perChannel == null) {
+                continue;
+            }
+
+            final Set<CableNetworkSink> sinksOnChannel = perChannel.get(reference.channel());
+            if (sinksOnChannel == null) {
+                continue;
+            }
+
+            final CableNetworkSink sink =
+                    new CableNetworkSink(sinkKey, reference.direction(), reference.sinkChannel());
+            if (!sinksOnChannel.remove(sink)) {
+                continue;
+            }
+
+            applySignalToSink(level, reference.sourcePos(), reference.channel(), sink, 0);
+
+            if (sinksOnChannel.isEmpty()) {
+                perChannel.remove(reference.channel());
+            }
+            if (perChannel.isEmpty()) {
+                sinks.remove(reference.sourcePos());
+                sourceValues.remove(reference.sourcePos());
             }
         }
     }

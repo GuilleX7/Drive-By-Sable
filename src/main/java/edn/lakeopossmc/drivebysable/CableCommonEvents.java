@@ -35,7 +35,10 @@ public final class CableCommonEvents {
             return;
         }
 
-        CableNetworkManager.get(level).markDirtyIfChunkInvolved(event.getChunk().getPos());
+        final CableNetworkManager manager = CableNetworkManager.get(level);
+        manager.markDirtyIfChunkInvolved(event.getChunk().getPos());
+
+        manager.pruneOrphanedEndpoints(level, event.getChunk());
     }
 
     // * Otherwise a player who logs out mid-selection stays marked forever
