@@ -5,6 +5,7 @@ import dev.ryanhcode.sable.api.schematic.SubLevelSchematicSerializationContext;
 import edn.lakeopossmc.drivebysable.CableBlockEntities;
 import edn.lakeopossmc.drivebysable.DriveBySableMod;
 import edn.lakeopossmc.drivebysable.cable.CableNetworkManager;
+import edn.lakeopossmc.drivebysable.cable.WorldSpaceSnapshotHolder;
 import edn.lakeopossmc.drivebysable.legacy.LegacyWireCompat;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
@@ -33,7 +34,8 @@ import net.createmod.catnip.lang.LangBuilder;
 
 // --- BLOCK ENTITY FOR PRESERVER --- //
 // * This block entity stores information for schematics
-public class NetworkBackupDriveBlockEntity extends BlockEntity implements PartialSafeNBT, IHaveGoggleInformation {
+public class NetworkBackupDriveBlockEntity extends BlockEntity
+        implements PartialSafeNBT, IHaveGoggleInformation, WorldSpaceSnapshotHolder {
 
     // * The region capture the player confirmed in the screen
     @Nullable

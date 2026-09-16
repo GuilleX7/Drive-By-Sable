@@ -7,11 +7,13 @@ import com.simibubi.create.foundation.blockEntity.behaviour.ValueSettingsBoard;
 import com.simibubi.create.foundation.blockEntity.behaviour.ValueSettingsFormatter;
 import com.simibubi.create.foundation.blockEntity.behaviour.scrollValue.ScrollValueBehaviour;
 import edn.lakeopossmc.drivebysable.CableBlockEntities;
+import edn.lakeopossmc.drivebysable.DriveBySableMod;
 import net.createmod.catnip.math.VecHelper;
 import dev.ryanhcode.sable.sublevel.SubLevel;
 import edn.lakeopossmc.drivebysable.cable.BackupDriveBounds;
 import edn.lakeopossmc.drivebysable.cable.BackupDriveCapture;
 import edn.lakeopossmc.drivebysable.cable.CableNetworkManager;
+import edn.lakeopossmc.drivebysable.cable.WorldSpaceSnapshotHolder;
 import edn.lakeopossmc.drivebysable.cable.graph.CableNetworkNode.CableNetworkSink;
 import edn.lakeopossmc.drivebysable.network.BackupDriveHighlightPacket;
 import edn.lakeopossmc.drivebysable.network.NetworkAnchorSavedPacket;
@@ -43,7 +45,7 @@ import java.util.Map;
 import java.util.Set;
 
 // --- NETWORK ANCHOR STORAGE --- //
-public class NetworkAnchorBlockEntity extends SmartBlockEntity {
+public class NetworkAnchorBlockEntity extends SmartBlockEntity implements WorldSpaceSnapshotHolder {
 
     private static final String SNAPSHOT_KEY = "AnchorSnapshot";
     private static final String RADIUS_KEY = "Radius";
@@ -301,6 +303,12 @@ public class NetworkAnchorBlockEntity extends SmartBlockEntity {
 
     private void releaseSnapshot() {
         snapshot = null;
+
+        // * Nothing left to pin
+        if (level != null && !level.isClientSide) {
+            CableNetworkManager.get(level).stopWaitingToBind(worldPosition);
+        }
+
         markStored(false);
     }
 
@@ -332,15 +340,73 @@ public class NetworkAnchorBlockEntity extends SmartBlockEntity {
             return;
         }
 
+        tryBindWorldSpaceSnapshot();
+        if (CableNetworkManager.isPastedCopy(snapshot, worldPosition)) {
+            return;
+        }
+
         appliedAt = worldPosition.immutable();
         setChanged();
         restore();
     }
 
+    //#region // --- CROSS LEVEL PINNING --- //
+    @Override
+    public void setLevel(final Level level) {
+        super.setLevel(level);
+
+        queueBindingIfNeeded();
+        tryBindWorldSpaceSnapshot();
+    }
+
+    @Override
+    public void tryBindWorldSpaceSnapshot() {
+        if (snapshot == null || level == null || level.isClientSide()) {
+            return;
+        }
+
+        // * Only a pasted copy is pinned
+        if (!CableNetworkManager.isPastedCopy(snapshot, worldPosition)) {
+            return;
+        }
+
+        final CompoundTag bound = CableNetworkManager.get(level)
+                .bindWorldSpaceSnapshot(level, worldPosition, snapshot);
+
+        // * Not everything has been placed yet, so try again next tick
+        if (bound == null) {
+            return;
+        }
+
+        snapshot = bound;
+        CableNetworkManager.get(level).stopWaitingToBind(worldPosition);
+
+        DriveBySableMod.LOGGER.info(
+                "[drivebywire-migration] Pinned a cross-level snapshot at {} to the sublevels it landed on.",
+                worldPosition
+        );
+
+        notifyUpdate();
+    }
+
+    private void queueBindingIfNeeded() {
+        if (level == null || level.isClientSide() || snapshot == null) {
+            return;
+        }
+
+        if (CableNetworkManager.isPastedCopy(snapshot, worldPosition)) {
+            CableNetworkManager.get(level).queueForBinding(worldPosition);
+        }
+    }
+    //#endregion
+
     private void restore() {
         if (level == null || snapshot == null) {
             return;
         }
+
+        // * One more attempt before reading
+        tryBindWorldSpaceSnapshot();
 
         // * Sources read out before the snapshot is discarded
         final Map<BlockPos, Set<String>> restoredSources =
@@ -444,6 +510,10 @@ public class NetworkAnchorBlockEntity extends SmartBlockEntity {
         }
         snapshot = tag.contains(SNAPSHOT_KEY, Tag.TAG_COMPOUND) ? tag.getCompound(SNAPSHOT_KEY).copy() : null;
         appliedAt = tag.contains(APPLIED_AT_KEY) ? BlockPos.of(tag.getLong(APPLIED_AT_KEY)) : null;
+
+        // * If setLevel already ran, this is the point the snapshot becomes known
+        queueBindingIfNeeded();
+        tryBindWorldSpaceSnapshot();
     }
 
     @Override

@@ -1198,8 +1198,8 @@ public final class CableNetworkManager {
                 continue;
             }
 
-            if (level.getBlockEntity(drivePos) instanceof final NetworkBackupDriveBlockEntity drive) {
-                drive.tryBindWorldSpaceSnapshot();
+            if (level.getBlockEntity(drivePos) instanceof final WorldSpaceSnapshotHolder holder) {
+                holder.tryBindWorldSpaceSnapshot();
             } else {
                 this.awaitingBind.remove(drivePos);
             }
