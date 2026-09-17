@@ -8,6 +8,7 @@
     "MixinDiodeBlock",
     "compat.aeronautics.MixinWheelMountBlockEntity",
     "compat.MixinSubLevelAssemblyHelper",
+    "compat.MixinSubLevelContainer",
     "compat.MixinLecternControllerBlock",
     "compat.MixinLecternControllerBlockEntity",
     "compat.MixinLinkedControllerInputPacket",

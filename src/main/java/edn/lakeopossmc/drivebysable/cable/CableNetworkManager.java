@@ -6,6 +6,7 @@ import dev.ryanhcode.sable.api.schematic.SubLevelSchematicSerializationContext;
 import dev.ryanhcode.sable.api.sublevel.SubLevelContainer;
 import dev.ryanhcode.sable.companion.math.BoundingBox3d;
 import dev.ryanhcode.sable.sublevel.SubLevel;
+import dev.ryanhcode.sable.sublevel.plot.LevelPlot;
 import edn.lakeopossmc.drivebysable.CableConfig;
 import edn.lakeopossmc.drivebysable.CableItems;
 import edn.lakeopossmc.drivebysable.DriveBySableMod;
@@ -39,6 +40,7 @@ import net.minecraft.world.level.block.state.BlockState;
 import javax.annotation.Nullable;
 import java.util.*;
 import java.util.function.Function;
+import java.util.function.LongPredicate;
 import net.minecraft.core.SectionPos;
 import net.minecraft.world.level.ChunkPos;
 import net.minecraft.world.level.chunk.ChunkAccess;
@@ -73,6 +75,14 @@ public final class CableNetworkManager {
     // * snapshot from somewhere else is a pasted copy, which is the only time
     // * binding is wanted
     private static final String SAVED_DRIVE_POS_KEY = "SavedDrivePos";
+    // * Which level an endpoint sat on at capture, relative to the drive
+    private static final String SOURCE_LEVEL_KEY = "SourceLevel";
+    private static final String SINK_LEVEL_KEY = "SinkLevel";
+    private static final byte ENDPOINT_ON_DRIVE_LEVEL = 0;
+    private static final byte ENDPOINT_ON_OTHER_SUB_LEVEL = 1;
+    private static final byte ENDPOINT_IN_WORLD = 2;
+    // * How long a paste may sit without any new endpoint appearing before binding
+    private static final long BIND_STALL_TICKS = 100L;
     private static final WorldAttached<CableNetworkManager> CLIENT_MANAGERS = new WorldAttached<>(level -> new CableNetworkManager(() -> {}));
 
     private final Map<Long, Map<String, Set<CableNetworkSink>>> sinks = new HashMap<>();
@@ -1036,10 +1046,19 @@ public final class CableNetworkManager {
                 continue;
             }
 
+            // * A source with no block is a ghost
+            if (isGhostEndpoint(level, sourcePos)) {
+                continue;
+            }
+
             for (final Map.Entry<String, Set<CableNetworkSink>> channelEntry : sourceEntry.getValue().entrySet()) {
                 for (final CableNetworkSink sink : channelEntry.getValue()) {
                     if (!BackupDriveCapture.isSinkCapturable(level, bounds, driveSubLevel, sink.blockPos())) {
                         skippedConnections++;
+                        continue;
+                    }
+
+                    if (isGhostEndpoint(level, sink.blockPos())) {
                         continue;
                     }
 
@@ -1049,6 +1068,8 @@ public final class CableNetworkManager {
                                 worldSpaceOffset(level, backupPos, driveSubLevel, sourcePos).asLong());
                         connection.putLong(SINK_KEY,
                                 worldSpaceOffset(level, backupPos, driveSubLevel, sink.blockPos()).asLong());
+                        connection.putByte(SOURCE_LEVEL_KEY, endpointLevelKind(level, driveSubLevel, sourcePos));
+                        connection.putByte(SINK_LEVEL_KEY, endpointLevelKind(level, driveSubLevel, sink.blockPos()));
                     } else {
                         connection.putLong(SOURCE_KEY, sourcePos.subtract(backupPos).asLong());
                         connection.putLong(SINK_KEY, sink.blockPos().subtract(backupPos).asLong());
@@ -1133,6 +1154,19 @@ public final class CableNetworkManager {
         return BlockPos.containing(driveSpace).subtract(drivePos);
     }
 
+    private static byte endpointLevelKind(final Level level, @Nullable final SubLevel driveSubLevel, final BlockPos pos) {
+        final SubLevel posSubLevel = BackupDriveCapture.subLevelOf(level, pos);
+        if (BackupDriveCapture.isSameLevel(driveSubLevel, posSubLevel)) {
+            return ENDPOINT_ON_DRIVE_LEVEL;
+        }
+        return posSubLevel == null ? ENDPOINT_IN_WORLD : ENDPOINT_ON_OTHER_SUB_LEVEL;
+    }
+
+    // * Loaded, and nothing there
+    private static boolean isGhostEndpoint(final Level level, final BlockPos pos) {
+        return level.isLoaded(pos) && level.getBlockState(pos).isAir();
+    }
+
     private Vec3 toDriveSpace(final Level level, final SubLevel driveSubLevel, final BlockPos pos) {
         final SubLevel posSubLevel = BackupDriveCapture.subLevelOf(level, pos);
         if (BackupDriveCapture.isSameLevel(driveSubLevel, posSubLevel)) {
@@ -1185,6 +1219,7 @@ public final class CableNetworkManager {
 
     public void stopWaitingToBind(final BlockPos drivePos) {
         this.awaitingBind.remove(drivePos.immutable());
+        this.bindProgress.remove(drivePos.immutable());
     }
 
     // * Retried every tick until each one takes
@@ -1214,12 +1249,25 @@ public final class CableNetworkManager {
             final BlockPos drivePos,
             final CompoundTag snapshot
     ) {
+        return bindWorldSpaceSnapshot(level, drivePos, snapshot, false);
+    }
+
+    // * giveUpWhenStalled lets a holder drop endpoints that never arrive
+    @Nullable
+    public CompoundTag bindWorldSpaceSnapshot(
+            final Level level,
+            final BlockPos drivePos,
+            final CompoundTag snapshot,
+            final boolean giveUpWhenStalled
+    ) {
         if (!isWorldSpaceSnapshot(snapshot) || !snapshot.contains(CONNECTIONS_KEY, Tag.TAG_LIST)) {
             return null;
         }
 
         final SubLevel driveSubLevel = BackupDriveCapture.subLevelOf(level, drivePos);
         final ListTag bound = new ListTag();
+        int resolved = 0;
+        int missing = 0;
 
         for (final Tag entry : snapshot.getList(CONNECTIONS_KEY, Tag.TAG_COMPOUND)) {
             if (!(entry instanceof final CompoundTag connection) || !isReadable(connection)) {
@@ -1227,15 +1275,16 @@ public final class CableNetworkManager {
             }
 
             final BlockPos sourcePos = resolveWorldSpaceEndpoint(level, drivePos, driveSubLevel,
-                    BlockPos.of(connection.getLong(SOURCE_KEY)));
+                    connection, SOURCE_KEY, SOURCE_LEVEL_KEY);
             final BlockPos sinkPos = resolveWorldSpaceEndpoint(level, drivePos, driveSubLevel,
-                    BlockPos.of(connection.getLong(SINK_KEY)));
+                    connection, SINK_KEY, SINK_LEVEL_KEY);
 
             // * Something has not been placed yet, so binding now would pin the wrong thing
-            // * Better to wait and try again
-            if (level.getBlockState(sourcePos).isAir() || level.getBlockState(sinkPos).isAir()) {
-                return null;
+            if (sourcePos == null || sinkPos == null) {
+                missing++;
+                continue;
             }
+            resolved++;
 
             final CompoundTag boundConnection = new CompoundTag();
             writeOwnedEndpoint(level, boundConnection, SOURCE_KEY, SOURCE_OWNER_KEY, sourcePos);
@@ -1251,7 +1300,22 @@ public final class CableNetworkManager {
             bound.add(boundConnection);
         }
 
-        if (bound.isEmpty()) {
+        // * Wait while the paste is still landing
+        if (missing > 0) {
+            if (!giveUpWhenStalled || !hasBindStalled(level, drivePos, resolved)) {
+                return null;
+            }
+
+            DriveBySableMod.LOGGER.warn(
+                    "[ghost-source] Snapshot at {} still had {} endpoint(s) with no block after {} ticks. "
+                            + "Binding the {} that landed and dropping the rest.",
+                    drivePos, missing, BIND_STALL_TICKS, resolved
+            );
+        }
+        bindProgress.remove(drivePos);
+
+        // * Nothing readable at all and nothing given up on, leave it as it was
+        if (bound.isEmpty() && missing == 0) {
             return null;
         }
 
@@ -1262,11 +1326,26 @@ public final class CableNetworkManager {
         if (driveSubLevel != null) {
             result.putUUID(OWNER_SUB_LEVEL_KEY, driveSubLevel.getUniqueId());
         }
-        if (snapshot.contains(UNSUPPORTED_CONNECTIONS_KEY)) {
-            result.putInt(UNSUPPORTED_CONNECTIONS_KEY, snapshot.getInt(UNSUPPORTED_CONNECTIONS_KEY));
+        final int unsupported = snapshot.getInt(UNSUPPORTED_CONNECTIONS_KEY) + missing;
+        if (unsupported > 0) {
+            result.putInt(UNSUPPORTED_CONNECTIONS_KEY, unsupported);
         }
 
         return result;
+    }
+
+    // * Runtime only. When the count of landed endpoints last changed, per holder
+    private final Map<BlockPos, long[]> bindProgress = new HashMap<>();
+
+    private boolean hasBindStalled(final Level level, final BlockPos drivePos, final int resolved) {
+        final long now = level.getGameTime();
+        final long[] progress = bindProgress.computeIfAbsent(drivePos.immutable(), ignored -> new long[]{-1L, now});
+        if (progress[0] != resolved) {
+            progress[0] = resolved;
+            progress[1] = now;
+            return false;
+        }
+        return now - progress[1] >= BIND_STALL_TICKS;
     }
 
     // * Against its own sublevel's plot, or absolute when loose in the world
@@ -1291,16 +1370,26 @@ public final class CableNetworkManager {
 
     // * Turns a drive space offset back into the block that now sits there
     // * Whatever sublevel occupies that spot at load time is the right one
+    // * Null when nothing suitable is there (yet)
+    @Nullable
     private BlockPos resolveWorldSpaceEndpoint(
             final Level level,
             final BlockPos drivePos,
             final SubLevel driveSubLevel,
-            final BlockPos storedOffset
+            final CompoundTag connection,
+            final String positionKey,
+            final String levelKey
     ) {
-        final BlockPos inDriveSpace = drivePos.offset(storedOffset);
+        final BlockPos inDriveSpace = drivePos.offset(BlockPos.of(connection.getLong(positionKey)));
+        // * Absent on snapshots saved before the level was recorded
+        final int kind = connection.contains(levelKey, Tag.TAG_BYTE) ? connection.getByte(levelKey) : -1;
 
         // * Same level as the drive is the common case and needs no searching
-        if (!level.getBlockState(inDriveSpace).isAir()) {
+        if (kind == ENDPOINT_ON_DRIVE_LEVEL) {
+            return level.getBlockState(inDriveSpace).isAir() ? null : inDriveSpace;
+        }
+
+        if (kind < 0 && !level.getBlockState(inDriveSpace).isAir()) {
             return inDriveSpace;
         }
 
@@ -1308,6 +1397,13 @@ public final class CableNetworkManager {
         final Vec3 world = driveSubLevel == null
                 ? centre
                 : driveSubLevel.logicalPose().transformPosition(centre);
+
+        if (kind == ENDPOINT_IN_WORLD) {
+            final BlockPos worldPos = BlockPos.containing(world);
+            return Sable.HELPER.getContaining(level, worldPos) == null && !level.getBlockState(worldPos).isAir()
+                    ? worldPos
+                    : null;
+        }
 
         for (final SubLevel candidate : Sable.HELPER.getAllIntersecting(level, new BoundingBox3d(
                 world.x - 0.5, world.y - 0.5, world.z - 0.5,
@@ -1323,8 +1419,7 @@ public final class CableNetworkManager {
             }
         }
 
-        // * Nothing there, hand back the drive space guess so the caller reports it missing
-        return inDriveSpace;
+        return null;
     }
 
     private static int countConnections(final Map<String, Set<CableNetworkSink>> perChannel) {
@@ -1642,11 +1737,17 @@ public final class CableNetworkManager {
                 && connection.contains(SOURCE_KEY, Tag.TAG_LONG)
                 && connection.contains(SINK_KEY, Tag.TAG_LONG)) {
             final SubLevel driveSubLevel = BackupDriveCapture.subLevelOf(level, backupPos);
+            final BlockPos source = resolveWorldSpaceEndpoint(level, backupPos, driveSubLevel,
+                    connection, SOURCE_KEY, SOURCE_LEVEL_KEY);
+            final BlockPos sink = resolveWorldSpaceEndpoint(level, backupPos, driveSubLevel,
+                    connection, SINK_KEY, SINK_LEVEL_KEY);
+            // * Not there yet, judged later
+            if (source == null || sink == null) {
+                return ResolvedPair.waiting();
+            }
             return new ResolvedPair(
-                    resolveWorldSpaceEndpoint(level, backupPos, driveSubLevel,
-                            BlockPos.of(connection.getLong(SOURCE_KEY))),
-                    resolveWorldSpaceEndpoint(level, backupPos, driveSubLevel,
-                            BlockPos.of(connection.getLong(SINK_KEY))),
+                    source,
+                    sink,
                     Direction.from3DDataValue(connection.getByte(DIRECTION_KEY)),
                     false
             );
@@ -1817,6 +1918,57 @@ public final class CableNetworkManager {
         return sinkChannel.isEmpty() ? rotateDirection(stored, rotation) : stored;
     }
     //#endregion
+
+    // * Has every endpoint this snapshot would connect actually been placed?
+    public boolean hasAllEndpointsLanded(
+            final Level level,
+            final BlockPos holderPos,
+            final Direction currentFacing,
+            final CompoundTag snapshot,
+            final boolean giveUpWhenStalled
+    ) {
+        if (snapshot == null || !snapshot.contains(CONNECTIONS_KEY, Tag.TAG_LIST)) {
+            return true;
+        }
+
+        final Rotation rotation = placementRotation(snapshot, currentFacing);
+        final boolean ownerAware = isOwnerAware(snapshot);
+        final boolean worldSpace = isWorldSpaceSnapshot(snapshot);
+        int landed = 0;
+        int missing = 0;
+
+        for (final Tag entry : snapshot.getList(CONNECTIONS_KEY, Tag.TAG_COMPOUND)) {
+            if (!(entry instanceof final CompoundTag connection) || !isReadable(connection)) {
+                continue;
+            }
+
+            final ResolvedPair resolved = resolveEndpoints(level, connection, holderPos, rotation, ownerAware, worldSpace);
+            if (resolved.deferred()
+                    || isGhostEndpoint(level, resolved.source())
+                    || isGhostEndpoint(level, resolved.sink())) {
+                missing++;
+            } else {
+                landed++;
+            }
+        }
+
+        if (missing == 0) {
+            bindProgress.remove(holderPos);
+            return true;
+        }
+
+        if (!giveUpWhenStalled || !hasBindStalled(level, holderPos, landed)) {
+            return false;
+        }
+
+        DriveBySableMod.LOGGER.warn(
+                "[ghost-source] Snapshot at {} still had {} connection(s) with no block after {} ticks. "
+                        + "Loading the {} that landed.",
+                holderPos, missing, BIND_STALL_TICKS, landed
+        );
+        bindProgress.remove(holderPos);
+        return true;
+    }
 
     public RestoreResult restoreBackupSnapshot(
             final Level level,
@@ -2024,9 +2176,13 @@ public final class CableNetworkManager {
                 expectedConnections++;
 
                 final BlockPos sourcePos = resolveWorldSpaceEndpoint(level, backupPos, driveSubLevel,
-                        BlockPos.of(connection.getLong(SOURCE_KEY)));
+                        connection, SOURCE_KEY, SOURCE_LEVEL_KEY);
                 final BlockPos sinkPos = resolveWorldSpaceEndpoint(level, backupPos, driveSubLevel,
-                        BlockPos.of(connection.getLong(SINK_KEY)));
+                        connection, SINK_KEY, SINK_LEVEL_KEY);
+                if (sourcePos == null || sinkPos == null) {
+                    skippedConnections++;
+                    continue;
+                }
                 final String channel = connection.getString(CHANNEL_KEY);
                 final String sinkChannel = connection.getString(SINK_CHANNEL_KEY);
                 final Direction sinkDirection = Direction.from3DDataValue(connection.getByte(DIRECTION_KEY));
@@ -2107,6 +2263,11 @@ public final class CableNetworkManager {
                     continue;
                 }
 
+                if (isGhostEndpoint(level, sourcePos) || isGhostEndpoint(level, sinkPos)) {
+                    deferredConnections++;
+                    continue;
+                }
+
                 if (addConnection(level, sourcePos, sinkPos, sinkDirection, channel, sinkChannel).isSuccess()) {
                     restoredConnections++;
                 }
@@ -2164,6 +2325,11 @@ public final class CableNetworkManager {
 
                 if (containsConnection(sourcePos, sinkPos, sinkDirection, channel, sinkChannel)) {
                     existingConnections++;
+                    continue;
+                }
+
+                if (isGhostEndpoint(level, sourcePos) || isGhostEndpoint(level, sinkPos)) {
+                    deferredConnections++;
                     continue;
                 }
 
@@ -2316,6 +2482,108 @@ public final class CableNetworkManager {
                 orphanedSinks.stream().map(BlockPos::of).toList()
         );
     }
+
+    //#region // --- SUBLEVEL PLOT CLEANUP --- //
+    public static void purgeRemovedPlot(final ServerLevel level, final LevelPlot plot, final String reason) {
+        get(level).purgeEndpointsWhere(level, key -> isInPlot(plot, key), reason);
+    }
+
+    private static boolean isInPlot(final LevelPlot plot, final long key) {
+        return plot.contains(new ChunkPos(
+                SectionPos.blockToSectionCoord(BlockPos.getX(key)),
+                SectionPos.blockToSectionCoord(BlockPos.getZ(key))
+        ));
+    }
+
+    // * Drops every source and output whose position matches
+    public int purgeEndpointsWhere(final Level level, final LongPredicate isStale, final String reason) {
+        final List<Long> staleSources = new ArrayList<>();
+        for (final long sourceKey : sinks.keySet()) {
+            if (isStale.test(sourceKey)) {
+                staleSources.add(sourceKey);
+            }
+        }
+
+        final List<Long> staleSinks = new ArrayList<>();
+        for (final long sinkKey : sinkReferences.keySet()) {
+            if (isStale.test(sinkKey)) {
+                staleSinks.add(sinkKey);
+            }
+        }
+
+        int dropped = 0;
+
+        for (final long sourceKey : staleSources) {
+            final Map<String, Set<CableNetworkSink>> perChannel = sinks.remove(sourceKey);
+            sourceValues.remove(sourceKey);
+            if (perChannel == null) {
+                continue;
+            }
+
+            for (final Map.Entry<String, Set<CableNetworkSink>> channelEntry : perChannel.entrySet()) {
+                for (final CableNetworkSink sink : channelEntry.getValue()) {
+                    removeSinkReference(sourceKey, channelEntry.getKey(), sink);
+                    dropped++;
+
+                    // * Blocks inside the region are gone, only real outputs get told
+                    if (!isStale.test(sink.position())) {
+                        applySignalToSink(level, sourceKey, channelEntry.getKey(), sink, 0);
+                    }
+                }
+            }
+        }
+
+        for (final long sinkKey : staleSinks) {
+            final Set<SinkReference> references = sinkReferences.remove(sinkKey);
+            if (references == null) {
+                continue;
+            }
+
+            for (final SinkReference reference : references) {
+                final Map<String, Set<CableNetworkSink>> perChannel = sinks.get(reference.sourcePos());
+                if (perChannel == null) {
+                    continue;
+                }
+
+                final Set<CableNetworkSink> sinksOnChannel = perChannel.get(reference.channel());
+                if (sinksOnChannel == null) {
+                    continue;
+                }
+
+                if (sinksOnChannel.remove(new CableNetworkSink(sinkKey, reference.direction(), reference.sinkChannel()))) {
+                    dropped++;
+                }
+                if (sinksOnChannel.isEmpty()) {
+                    perChannel.remove(reference.channel());
+                }
+                if (perChannel.isEmpty()) {
+                    sinks.remove(reference.sourcePos());
+                    sourceValues.remove(reference.sourcePos());
+                }
+            }
+        }
+
+        // * Silently forget graph state for the region so nothing pokes a vanished plot
+        sourceValues.keySet().removeIf(isStale::test);
+        nodes.keySet().removeIf(face -> isStale.test(face.pos()));
+        staleFaces.removeIf(face -> isStale.test(face.pos()));
+        moduleNodes.keySet().removeIf(key -> isStale.test(key.position()));
+
+        if (dropped > 0) {
+            dirtyMarker.run();
+            DriveBySableMod.LOGGER.info(
+                    "[ghost-source] Dropped {} connection(s) from {} source(s) and {} output(s) left behind in {} ({}).",
+                    dropped,
+                    staleSources.size(),
+                    staleSinks.size(),
+                    level.dimension().location(),
+                    reason
+            );
+        }
+
+        return dropped;
+    }
+    //#endregion
 
     // * Air, and not a block that a sublevel assembly is halfway through moving
     private boolean isOrphanedEndpoint(final ChunkAccess chunk, final BlockPos pos) {

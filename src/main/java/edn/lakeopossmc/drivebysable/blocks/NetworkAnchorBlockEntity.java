@@ -345,6 +345,12 @@ public class NetworkAnchorBlockEntity extends SmartBlockEntity implements WorldS
             return;
         }
 
+        // * Wait for the rest of the paste to land, otherwise its wiring is dropped
+        if (!CableNetworkManager.get(level)
+                .hasAllEndpointsLanded(level, worldPosition, Direction.NORTH, snapshot, true)) {
+            return;
+        }
+
         appliedAt = worldPosition.immutable();
         setChanged();
         restore();
@@ -371,7 +377,7 @@ public class NetworkAnchorBlockEntity extends SmartBlockEntity implements WorldS
         }
 
         final CompoundTag bound = CableNetworkManager.get(level)
-                .bindWorldSpaceSnapshot(level, worldPosition, snapshot);
+                .bindWorldSpaceSnapshot(level, worldPosition, snapshot, true);
 
         // * Not everything has been placed yet, so try again next tick
         if (bound == null) {
