@@ -999,6 +999,22 @@ public final class CableNetworkManager {
         return perChannel == null ? 0 : countConnections(perChannel);
     }
 
+    // * Every block this source drives, across all its channels
+    public Set<BlockPos> getOutputPositions(final BlockPos source) {
+        final Map<String, Set<CableNetworkSink>> perChannel = sinks.get(source.asLong());
+        if (perChannel == null) {
+            return Set.of();
+        }
+
+        final Set<BlockPos> outputs = new LinkedHashSet<>();
+        for (final Set<CableNetworkSink> sinksOnChannel : perChannel.values()) {
+            for (final CableNetworkSink sink : sinksOnChannel) {
+                outputs.add(BlockPos.of(sink.position()));
+            }
+        }
+        return outputs;
+    }
+
     // * Deep copy so callers cant mutate live state
     public Map<Long, Map<String, Set<CableNetworkSink>>> getNetwork() {
         final Map<Long, Map<String, Set<CableNetworkSink>>> copy = new HashMap<>();

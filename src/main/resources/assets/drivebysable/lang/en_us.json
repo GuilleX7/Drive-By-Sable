@@ -385,5 +385,13 @@
   "commands.drivebysable.remove.multiple": "Removed %1$s from %2$s:",
   "commands.drivebysable.remove.confirm": "This removes %1$s from %2$s in %3$s. Run the command again within 10 seconds to confirm, or click %4$s",
   "commands.drivebysable.remove.confirm.button": "[Confirm]",
-  "commands.drivebysable.remove.confirm.hover": "Remove every Cable connection in %s"
+  "commands.drivebysable.remove.confirm.hover": "Remove every Cable connection in %s",
+  "commands.drivebysable.outputs.one": "1 output",
+  "commands.drivebysable.outputs.many": "%s outputs",
+  "commands.drivebysable.seconds.one": "1 second",
+  "commands.drivebysable.seconds.many": "%s seconds",
+  "commands.drivebysable.highlight.single": "Highlighted %1$s with %2$s (%3$s)",
+  "commands.drivebysable.highlight.multiple": "Highlighted %1$s with %2$s (%3$s)",
+  "commands.drivebysable.highlight.truncated": "Only the nearest %1$s of %2$s matching Sources are shown",
+  "commands.drivebysable.highlight.cleared": "Highlight cleared"
 }
