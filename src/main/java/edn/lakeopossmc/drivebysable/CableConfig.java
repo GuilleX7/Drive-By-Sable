@@ -30,6 +30,10 @@ public class CableConfig {
     public final ModConfigSpec.BooleanValue integratedSensorBus;
     //#endregion
 
+    //#region // --- COMMANDS --- //
+    public final ModConfigSpec.IntValue commandRadiusLimit;
+    //#endregion
+
     //#region // --- RECIPES AND TEXTURES --- //
     public final ModConfigSpec.BooleanValue expensiveBackupDrive;
     public final ModConfigSpec.BooleanValue andesiteHub;
@@ -173,6 +177,23 @@ public class CableConfig {
                 )
                 .translation("drivebysable.config.integratedSensorBus")
                 .define("integratedSensorBus", true);
+
+        builder.pop();
+        //#endregion
+
+        //#region // --- COMMANDS --- //
+        builder
+                .comment("Limits for the /cable commands.")
+                .translation("drivebysable.config.commands")
+                .push("commands");
+
+        commandRadiusLimit = builder
+                .comment(
+                        "Largest radius, in blocks, the radius target of a /cable command may use.",
+                        "Measured from the command's position to where each Source appears in the world."
+                )
+                .translation("drivebysable.config.commandRadiusLimit")
+                .defineInRange("commandRadiusLimit", 256, 1, 4096);
 
         builder.pop();
         //#endregion

@@ -41,6 +41,8 @@ import javax.annotation.Nullable;
 import java.util.*;
 import java.util.function.Function;
 import java.util.function.LongPredicate;
+import java.util.function.Predicate;
+import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.core.SectionPos;
 import net.minecraft.world.level.ChunkPos;
 import net.minecraft.world.level.chunk.ChunkAccess;
@@ -81,6 +83,13 @@ public final class CableNetworkManager {
     private static final byte ENDPOINT_ON_DRIVE_LEVEL = 0;
     private static final byte ENDPOINT_ON_OTHER_SUB_LEVEL = 1;
     private static final byte ENDPOINT_IN_WORLD = 2;
+    // * The unrounded drive space position and block id of each endpoint
+    private static final String SOURCE_EXACT_KEY = "SourceExact";
+    private static final String SINK_EXACT_KEY = "SinkExact";
+    private static final String SOURCE_BLOCK_KEY = "SourceBlock";
+    private static final String SINK_BLOCK_KEY = "SinkBlock";
+    // * How far around the expected point a cross level endpoint is looked for
+    private static final int CROSS_LEVEL_SEARCH_RADIUS = 1;
     // * How long a paste may sit without any new endpoint appearing before binding
     private static final long BIND_STALL_TICKS = 100L;
     private static final WorldAttached<CableNetworkManager> CLIENT_MANAGERS = new WorldAttached<>(level -> new CableNetworkManager(() -> {}));
@@ -971,6 +980,25 @@ public final class CableNetworkManager {
         return values == null ? Map.of() : Map.copyOf(values);
     }
 
+    // * Every block that currently drives at least one connection
+    public List<BlockPos> getSourcePositions() {
+        final List<BlockPos> positions = new ArrayList<>(sinks.size());
+        for (final long key : sinks.keySet()) {
+            positions.add(BlockPos.of(key));
+        }
+        return positions;
+    }
+
+    public boolean isSource(final BlockPos pos) {
+        return sinks.containsKey(pos.asLong());
+    }
+
+    // * Across every channel on the source
+    public int countConnectionsFrom(final BlockPos source) {
+        final Map<String, Set<CableNetworkSink>> perChannel = sinks.get(source.asLong());
+        return perChannel == null ? 0 : countConnections(perChannel);
+    }
+
     // * Deep copy so callers cant mutate live state
     public Map<Long, Map<String, Set<CableNetworkSink>>> getNetwork() {
         final Map<Long, Map<String, Set<CableNetworkSink>>> copy = new HashMap<>();
@@ -1070,6 +1098,10 @@ public final class CableNetworkManager {
                                 worldSpaceOffset(level, backupPos, driveSubLevel, sink.blockPos()).asLong());
                         connection.putByte(SOURCE_LEVEL_KEY, endpointLevelKind(level, driveSubLevel, sourcePos));
                         connection.putByte(SINK_LEVEL_KEY, endpointLevelKind(level, driveSubLevel, sink.blockPos()));
+                        writeExactEndpoint(level, connection, SOURCE_EXACT_KEY, SOURCE_BLOCK_KEY,
+                                backupPos, driveSubLevel, sourcePos);
+                        writeExactEndpoint(level, connection, SINK_EXACT_KEY, SINK_BLOCK_KEY,
+                                backupPos, driveSubLevel, sink.blockPos());
                     } else {
                         connection.putLong(SOURCE_KEY, sourcePos.subtract(backupPos).asLong());
                         connection.putLong(SINK_KEY, sink.blockPos().subtract(backupPos).asLong());
@@ -1152,6 +1184,33 @@ public final class CableNetworkManager {
     ) {
         final Vec3 driveSpace = toDriveSpace(level, driveSubLevel, endpointPos);
         return BlockPos.containing(driveSpace).subtract(drivePos);
+    }
+
+    // * Centre of the block in the drive's space
+    private void writeExactEndpoint(
+            final Level level,
+            final CompoundTag connection,
+            final String exactKey,
+            final String blockKey,
+            final BlockPos drivePos,
+            @Nullable final SubLevel driveSubLevel,
+            final BlockPos endpointPos
+    ) {
+        final SubLevel posSubLevel = BackupDriveCapture.subLevelOf(level, endpointPos);
+        final Vec3 driveSpace = BackupDriveCapture.isSameLevel(driveSubLevel, posSubLevel)
+                ? Vec3.atCenterOf(endpointPos)
+                : toDriveSpace(level, driveSubLevel, endpointPos);
+
+        final CompoundTag exact = new CompoundTag();
+        exact.putDouble("X", driveSpace.x - drivePos.getX());
+        exact.putDouble("Y", driveSpace.y - drivePos.getY());
+        exact.putDouble("Z", driveSpace.z - drivePos.getZ());
+        connection.put(exactKey, exact);
+        connection.putString(blockKey, blockIdAt(level, endpointPos));
+    }
+
+    private static String blockIdAt(final Level level, final BlockPos pos) {
+        return BuiltInRegistries.BLOCK.getKey(level.getBlockState(pos).getBlock()).toString();
     }
 
     private static byte endpointLevelKind(final Level level, @Nullable final SubLevel driveSubLevel, final BlockPos pos) {
@@ -1268,6 +1327,7 @@ public final class CableNetworkManager {
         final ListTag bound = new ListTag();
         int resolved = 0;
         int missing = 0;
+        final List<CompoundTag> unresolved = new ArrayList<>();
 
         for (final Tag entry : snapshot.getList(CONNECTIONS_KEY, Tag.TAG_COMPOUND)) {
             if (!(entry instanceof final CompoundTag connection) || !isReadable(connection)) {
@@ -1282,6 +1342,7 @@ public final class CableNetworkManager {
             // * Something has not been placed yet, so binding now would pin the wrong thing
             if (sourcePos == null || sinkPos == null) {
                 missing++;
+                unresolved.add(connection);
                 continue;
             }
             resolved++;
@@ -1307,10 +1368,13 @@ public final class CableNetworkManager {
             }
 
             DriveBySableMod.LOGGER.warn(
-                    "[ghost-source] Snapshot at {} still had {} endpoint(s) with no block after {} ticks. "
-                            + "Binding the {} that landed and dropping the rest.",
+                    "[ghost-source] Snapshot at {} still had {} connection(s) that could not be matched to a "
+                            + "block after {} ticks. Binding the {} that landed and dropping the rest.",
                     drivePos, missing, BIND_STALL_TICKS, resolved
             );
+            for (final CompoundTag connection : unresolved) {
+                DriveBySableMod.LOGGER.warn("[ghost-source]   unmatched: {}", describeUnresolved(level, drivePos, connection));
+            }
         }
         bindProgress.remove(drivePos);
 
@@ -1380,46 +1444,162 @@ public final class CableNetworkManager {
             final String positionKey,
             final String levelKey
     ) {
+        final boolean isSource = SOURCE_KEY.equals(positionKey);
+        final String exactKey = isSource ? SOURCE_EXACT_KEY : SINK_EXACT_KEY;
+        final String blockKey = isSource ? SOURCE_BLOCK_KEY : SINK_BLOCK_KEY;
+
         final BlockPos inDriveSpace = drivePos.offset(BlockPos.of(connection.getLong(positionKey)));
         // * Absent on snapshots saved before the level was recorded
         final int kind = connection.contains(levelKey, Tag.TAG_BYTE) ? connection.getByte(levelKey) : -1;
+        final String blockId = connection.getString(blockKey);
 
-        // * Same level as the drive is the common case and needs no searching
-        if (kind == ENDPOINT_ON_DRIVE_LEVEL) {
-            return level.getBlockState(inDriveSpace).isAir() ? null : inDriveSpace;
+        // * The block has to be able to play its part
+        final String channel = connection.getString(CHANNEL_KEY);
+        final String sinkChannel = connection.getString(SINK_CHANNEL_KEY);
+        final Predicate<BlockPos> fitsRole = isSource
+                ? pos -> isValidChannel(level, pos, channel)
+                : pos -> isValidSinkChannel(level, pos, sinkChannel);
+
+        // * Same level as the drive moves with it block for block, so only the exact spot counts
+        if (kind == ENDPOINT_ON_DRIVE_LEVEL || kind < 0) {
+            if (isCandidate(level, inDriveSpace, blockId, fitsRole)) {
+                return inDriveSpace;
+            }
+            if (kind == ENDPOINT_ON_DRIVE_LEVEL) {
+                return null;
+            }
         }
 
-        if (kind < 0 && !level.getBlockState(inDriveSpace).isAir()) {
-            return inDriveSpace;
-        }
-
-        final Vec3 centre = Vec3.atCenterOf(inDriveSpace);
+        final Vec3 drivePoint = connection.contains(exactKey, Tag.TAG_COMPOUND)
+                ? Vec3.atLowerCornerOf(drivePos).add(
+                connection.getCompound(exactKey).getDouble("X"),
+                connection.getCompound(exactKey).getDouble("Y"),
+                connection.getCompound(exactKey).getDouble("Z"))
+                : Vec3.atCenterOf(inDriveSpace);
         final Vec3 world = driveSubLevel == null
-                ? centre
-                : driveSubLevel.logicalPose().transformPosition(centre);
+                ? drivePoint
+                : driveSubLevel.logicalPose().transformPosition(drivePoint);
 
-        if (kind == ENDPOINT_IN_WORLD) {
-            final BlockPos worldPos = BlockPos.containing(world);
-            return Sable.HELPER.getContaining(level, worldPos) == null && !level.getBlockState(worldPos).isAir()
-                    ? worldPos
-                    : null;
-        }
+        BlockPos best = null;
+        double bestDistance = Double.MAX_VALUE;
 
-        for (final SubLevel candidate : Sable.HELPER.getAllIntersecting(level, new BoundingBox3d(
-                world.x - 0.5, world.y - 0.5, world.z - 0.5,
-                world.x + 0.5, world.y + 0.5, world.z + 0.5))) {
-
-            if (BackupDriveCapture.isSameLevel(driveSubLevel, candidate)) {
-                continue;
-            }
-
-            final BlockPos local = BlockPos.containing(candidate.logicalPose().transformPositionInverse(world));
-            if (!level.getBlockState(local).isAir()) {
-                return local;
+        // * Loose in the world, only worth a look when the drive is not already the world
+        if ((kind == ENDPOINT_IN_WORLD || kind < 0) && driveSubLevel != null) {
+            final SearchHit hit = searchAround(level, world, blockId,
+                    fitsRole.and(pos -> Sable.HELPER.getContaining(level, pos) == null));
+            if (hit != null) {
+                best = hit.pos();
+                bestDistance = hit.distanceSqr();
             }
         }
 
-        return null;
+        if (kind == ENDPOINT_ON_OTHER_SUB_LEVEL || kind < 0) {
+            final double reach = CROSS_LEVEL_SEARCH_RADIUS + 1.0;
+            for (final SubLevel candidate : Sable.HELPER.getAllIntersecting(level, new BoundingBox3d(
+                    world.x - reach, world.y - reach, world.z - reach,
+                    world.x + reach, world.y + reach, world.z + reach))) {
+
+                if (BackupDriveCapture.isSameLevel(driveSubLevel, candidate)) {
+                    continue;
+                }
+
+                final Vec3 local = candidate.logicalPose().transformPositionInverse(world);
+                final SearchHit hit = searchAround(level, local, blockId,
+                        fitsRole.and(pos -> BackupDriveCapture.isSameLevel(
+                                candidate, BackupDriveCapture.subLevelOf(level, pos))));
+                if (hit != null && hit.distanceSqr() < bestDistance) {
+                    best = hit.pos();
+                    bestDistance = hit.distanceSqr();
+                }
+            }
+        }
+
+        return best;
+    }
+
+    private record SearchHit(BlockPos pos, double distanceSqr) {
+    }
+
+    private static boolean isCandidate(
+            final Level level,
+            final BlockPos pos,
+            final String blockId,
+            final Predicate<BlockPos> fitsRole
+    ) {
+        final BlockState state = level.getBlockState(pos);
+        if (state.isAir()) {
+            return false;
+        }
+        if (!blockId.isEmpty() && !BuiltInRegistries.BLOCK.getKey(state.getBlock()).toString().equals(blockId)) {
+            return false;
+        }
+        return fitsRole.test(pos);
+    }
+
+    // * The closest suitable block to a point, within the search radius
+    @Nullable
+    private static SearchHit searchAround(
+            final Level level,
+            final Vec3 point,
+            final String blockId,
+            final Predicate<BlockPos> fitsRole
+    ) {
+        final BlockPos centre = BlockPos.containing(point);
+        final double maxDistanceSqr = blockId.isEmpty()
+                ? 1.0
+                : (CROSS_LEVEL_SEARCH_RADIUS + 0.5) * (CROSS_LEVEL_SEARCH_RADIUS + 0.5) * 3.0;
+
+        BlockPos best = null;
+        double bestDistance = maxDistanceSqr;
+        final BlockPos.MutableBlockPos cursor = new BlockPos.MutableBlockPos();
+
+        for (int dx = -CROSS_LEVEL_SEARCH_RADIUS; dx <= CROSS_LEVEL_SEARCH_RADIUS; dx++) {
+            for (int dy = -CROSS_LEVEL_SEARCH_RADIUS; dy <= CROSS_LEVEL_SEARCH_RADIUS; dy++) {
+                for (int dz = -CROSS_LEVEL_SEARCH_RADIUS; dz <= CROSS_LEVEL_SEARCH_RADIUS; dz++) {
+                    cursor.setWithOffset(centre, dx, dy, dz);
+                    final double distance = Vec3.atCenterOf(cursor).distanceToSqr(point);
+                    if (distance > bestDistance) {
+                        continue;
+                    }
+
+                    final BlockPos candidate = cursor.immutable();
+                    if (isCandidate(level, candidate, blockId, fitsRole)) {
+                        best = candidate;
+                        bestDistance = distance;
+                    }
+                }
+            }
+        }
+
+        return best == null ? null : new SearchHit(best, bestDistance);
+    }
+
+    // * One line per connection that never landed, so a failed paste can be diagnosed from the log
+    private String describeUnresolved(
+            final Level level,
+            final BlockPos drivePos,
+            final CompoundTag connection
+    ) {
+        final StringBuilder line = new StringBuilder("channel '").append(connection.getString(CHANNEL_KEY)).append("'");
+        for (final String[] keys : new String[][]{
+                {"source", SOURCE_KEY, SOURCE_LEVEL_KEY, SOURCE_BLOCK_KEY},
+                {"output", SINK_KEY, SINK_LEVEL_KEY, SINK_BLOCK_KEY}}) {
+            final BlockPos expected = drivePos.offset(BlockPos.of(connection.getLong(keys[1])));
+            final String kind = !connection.contains(keys[2], Tag.TAG_BYTE) ? "unrecorded"
+                    : switch (connection.getByte(keys[2])) {
+                case ENDPOINT_ON_DRIVE_LEVEL -> "same level";
+                case ENDPOINT_ON_OTHER_SUB_LEVEL -> "other sub-level";
+                case ENDPOINT_IN_WORLD -> "world";
+                default -> "unknown";
+            };
+            line.append(", ").append(keys[0]).append(" [").append(kind)
+                    .append(", saved ").append(connection.getString(keys[3]).isEmpty() ? "?" : connection.getString(keys[3]))
+                    .append(", at drive offset ").append(expected.getX() - drivePos.getX()).append(' ')
+                    .append(expected.getY() - drivePos.getY()).append(' ')
+                    .append(expected.getZ() - drivePos.getZ())
+                    .append(", found there ").append(blockIdAt(level, expected)).append(']');
+        }
+        return line.toString();
     }
 
     private static int countConnections(final Map<String, Set<CableNetworkSink>> perChannel) {

@@ -1,6 +1,7 @@
 package edn.lakeopossmc.drivebysable;
 
 import edn.lakeopossmc.drivebysable.cable.SubLevelPlotCleanup;
+import edn.lakeopossmc.drivebysable.command.CableCommands;
 import com.mojang.logging.LogUtils;
 import com.simibubi.create.foundation.item.ItemDescription;
 
@@ -61,6 +62,7 @@ public class DriveBySableMod {
         // * Sable fires its container ready hook while levels are built, so hook it early
         SubLevelPlotCleanup.register();
         NeoForge.EVENT_BUS.addListener(CableCommonEvents::onLevelTick);
+        NeoForge.EVENT_BUS.addListener(CableCommands::register);
         NeoForge.EVENT_BUS.addListener(CableCommonEvents::onNeighborNotify);
         NeoForge.EVENT_BUS.addListener(CableCommonEvents::onBlockBreak);
         NeoForge.EVENT_BUS.addListener(CableConfigReload::onAddReloadListener);
