@@ -8,7 +8,7 @@ import net.minecraft.server.level.ServerLevel;
 
 // --- KEEPS THE CABLE NETWORK OUT OF FREED SUBLEVEL PLOTS --- //
 // * Sable reuses the first free plot for the next sublevel it creates
-// * Anything still wired inside a removed sublevel's plot would come back as ghosts
+// * Anything still connected inside a removed sublevel's plot would come back as ghosts
 public final class SubLevelPlotCleanup {
     private SubLevelPlotCleanup() {
     }
