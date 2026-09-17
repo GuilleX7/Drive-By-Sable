@@ -183,13 +183,13 @@ public class CableConfig {
 
         //#region // --- COMMANDS --- //
         builder
-                .comment("Limits for the /cable commands.")
+                .comment("Limits for the /dbs commands.")
                 .translation("drivebysable.config.commands")
                 .push("commands");
 
         commandRadiusLimit = builder
                 .comment(
-                        "Largest radius, in blocks, the radius target of a /cable command may use.",
+                        "Largest radius, in blocks, the radius target of a /dbs command may use.",
                         "Measured from the command's position to where each Source appears in the world."
                 )
                 .translation("drivebysable.config.commandRadiusLimit")

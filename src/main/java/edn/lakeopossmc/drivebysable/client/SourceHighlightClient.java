@@ -7,6 +7,7 @@ import com.simibubi.create.content.kinetics.mechanicalArm.ArmInteractionPoint;
 import dev.ryanhcode.sable.sublevel.SubLevel;
 import edn.lakeopossmc.drivebysable.DriveBySableMod;
 import edn.lakeopossmc.drivebysable.cable.BackupDriveCapture;
+import edn.lakeopossmc.drivebysable.network.SourceHighlightPacket;
 import net.createmod.catnip.animation.AnimationTickHolder;
 import net.createmod.catnip.outliner.Outliner;
 import net.minecraft.client.Minecraft;
@@ -51,8 +52,8 @@ public final class SourceHighlightClient {
     private static final int BLINK_PERIOD = 16;
     private static final int BLINK_HALF = 8;
 
-    private static final float OUTLINE_WIDTH = 1 / 16.0F;
-    private static final double LINK_THICKNESS = 1 / 64.0D;
+    private static final float OUTLINE_WIDTH = 1 / 32.0F;
+    private static final double LINK_THICKNESS = OUTLINE_WIDTH;
 
     private static final AABB UNIT_CUBE = new AABB(0.0D, 0.0D, 0.0D, 1.0D, 1.0D, 1.0D);
 
@@ -63,6 +64,7 @@ public final class SourceHighlightClient {
     @Nullable
     private static ResourceKey<Level> dimension;
     private static int ticksRemaining;
+    private static boolean infinite;
 
     private SourceHighlightClient() {
     }
@@ -76,7 +78,7 @@ public final class SourceHighlightClient {
         clear();
 
         final Minecraft minecraft = Minecraft.getInstance();
-        if (ticks <= 0 || minecraft.level == null) {
+        if (ticks == 0 || minecraft.level == null) {
             return;
         }
 
@@ -100,6 +102,7 @@ public final class SourceHighlightClient {
 
         dimension = minecraft.level.dimension();
         ticksRemaining = ticks;
+        infinite = ticks == SourceHighlightPacket.INFINITE;
     }
 
     public static void clear() {
@@ -108,11 +111,12 @@ public final class SourceHighlightClient {
         links.clear();
         dimension = null;
         ticksRemaining = 0;
+        infinite = false;
     }
 
     @SubscribeEvent
     public static void onClientTick(final ClientTickEvent.Post event) {
-        if (ticksRemaining <= 0) {
+        if (!isActive()) {
             return;
         }
 
@@ -133,7 +137,7 @@ public final class SourceHighlightClient {
             outline(minecraft.level, OUTPUT_SLOT, pos, outputColor);
         }
 
-        if (--ticksRemaining <= 0) {
+        if (!infinite && --ticksRemaining <= 0) {
             clear();
         }
     }
@@ -149,7 +153,7 @@ public final class SourceHighlightClient {
     //#region // --- CONNECTION LINES --- //
     @SubscribeEvent
     public static void onRenderLevel(final RenderLevelStageEvent event) {
-        if (ticksRemaining <= 0 || links.isEmpty() || event.getStage() != RenderLevelStageEvent.Stage.AFTER_PARTICLES) {
+        if (!isActive() || links.isEmpty() || event.getStage() != RenderLevelStageEvent.Stage.AFTER_PARTICLES) {
             return;
         }
 
@@ -222,6 +226,10 @@ public final class SourceHighlightClient {
     @SubscribeEvent
     public static void onLevelUnload(final LevelEvent.Unload event) {
         clear();
+    }
+
+    private static boolean isActive() {
+        return infinite || ticksRemaining > 0;
     }
 
     private static boolean isBrightPhase() {

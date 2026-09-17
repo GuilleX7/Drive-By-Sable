@@ -10,7 +10,9 @@ import net.minecraft.ChatFormatting;
 import net.minecraft.commands.CommandSourceStack;
 import net.minecraft.commands.Commands;
 import net.minecraft.core.BlockPos;
+import net.minecraft.network.chat.ClickEvent;
 import net.minecraft.network.chat.Component;
+import net.minecraft.network.chat.HoverEvent;
 import net.minecraft.network.chat.MutableComponent;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
@@ -21,14 +23,16 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Set;
 
-// --- /dbs highlight <target> [for <seconds>] | /dbs highlight off --- //
+// --- /dbs highlight <target> [<seconds> | infinite] | /dbs highlight clear --- //
 // * Outlines the targeted Sources and everything they drive, for the player running it only
 public final class HighlightSourcesCommand {
 
     private static final int DEFAULT_SECONDS = 10;
+    private static final int INFINITE = -1;
     private static final int MAX_SECONDS = 300;
     private static final int MAX_SOURCES = 512;
     private static final int MAX_LINKS = 4096;
+    private static final int LISTED_SOURCES = 8;
 
     private HighlightSourcesCommand() {
     }
@@ -41,12 +45,13 @@ public final class HighlightSourcesCommand {
 
         return SourceTargets.attach(highlight, true, (node, resolver) -> node
                 .executes(context -> run(context, resolver.resolve(context), DEFAULT_SECONDS))
-                .then(Commands.literal("for")
-                        .then(Commands.argument("seconds", IntegerArgumentType.integer(1, MAX_SECONDS))
-                                .executes(context -> run(
-                                        context,
-                                        resolver.resolve(context),
-                                        IntegerArgumentType.getInteger(context, "seconds"))))));
+                .then(Commands.argument("seconds", IntegerArgumentType.integer(1, MAX_SECONDS))
+                        .executes(context -> run(
+                                context,
+                                resolver.resolve(context),
+                                IntegerArgumentType.getInteger(context, "seconds"))))
+                .then(Commands.literal("infinite")
+                        .executes(context -> run(context, resolver.resolve(context), INFINITE))));
     }
 
     private static int run(
@@ -82,7 +87,7 @@ public final class HighlightSourcesCommand {
                 List.copyOf(shown),
                 outputs,
                 owners,
-                seconds * 20
+                seconds == INFINITE ? SourceHighlightPacket.INFINITE : seconds * 20
         ));
 
         final Component feedback = feedback(level, shown, distinctOutputs.size(), seconds, selection.sources().size());
@@ -93,7 +98,8 @@ public final class HighlightSourcesCommand {
     private static int clear(final CommandContext<CommandSourceStack> context) throws CommandSyntaxException {
         PacketDistributor.sendToPlayer(context.getSource().getPlayerOrException(), SourceHighlightPacket.clear());
         context.getSource().sendSuccess(
-                () -> Component.translatable("commands.drivebysable.highlight.cleared").withStyle(ChatFormatting.GRAY),
+                () -> SourceText.message(
+                        Component.translatable("commands.drivebysable.highlight.cleared").withStyle(ChatFormatting.GRAY)),
                 false
         );
         return 1;
@@ -106,38 +112,64 @@ public final class HighlightSourcesCommand {
             final int seconds,
             final int matched
     ) {
-        final Component duration = seconds(seconds);
+        final boolean forever = seconds == INFINITE;
+        final Component clearHint = Component.translatable(
+                "commands.drivebysable.highlight.clear_hint",
+                SourceText.clickable(
+                        Component.translatable("commands.drivebysable.here"),
+                        "/dbs highlight clear",
+                        Component.translatable("commands.drivebysable.highlight.here.hover"))
+        ).withStyle(ChatFormatting.GRAY);
 
-        final MutableComponent message = shown.size() == 1
+        // * One Source reads as a sentence, the rest get a heading and a list
+        if (shown.size() == 1) {
+            final MutableComponent message = Component.translatable(
+                    "commands.drivebysable.highlight.single",
+                    SourceText.describe(level, shown.get(0))
+            ).withStyle(ChatFormatting.GRAY);
+
+            return SourceText.message(message.append("\n").append(forever
+                    ? clearHint
+                    : Component.translatable(
+                    "commands.drivebysable.highlight.single.duration",
+                    SourceText.number(seconds),
+                    SourceText.clickable(
+                            Component.translatable("commands.drivebysable.here"),
+                            "/dbs highlight clear",
+                            Component.translatable("commands.drivebysable.highlight.here.hover"))
+            ).withStyle(ChatFormatting.GRAY)));
+        }
+
+        final MutableComponent message = (forever
                 ? Component.translatable(
-                        "commands.drivebysable.highlight.single",
-                        SourceText.describe(level, shown.get(0)),
-                        outputs(outputs),
-                        duration)
+                "commands.drivebysable.highlight.multiple.infinite",
+                SourceText.sourceNumber(shown.size()),
+                SourceText.outputNumber(outputs))
                 : Component.translatable(
-                        "commands.drivebysable.highlight.multiple",
-                        SourceText.sources(shown.size()),
-                        outputs(outputs),
-                        duration);
-        message.withStyle(ChatFormatting.GRAY);
+                "commands.drivebysable.highlight.multiple",
+                SourceText.sourceNumber(shown.size()),
+                SourceText.outputNumber(outputs),
+                SourceText.number(seconds))
+        ).withStyle(ChatFormatting.GRAY);
+
+        message.append("\n");
+
+        for (int i = 0; i < Math.min(LISTED_SOURCES, shown.size()); i++) {
+            message.append("\n").append(Component.translatable(
+                    "commands.drivebysable.list.bullet", SourceText.describe(level, shown.get(i))));
+        }
+        if (shown.size() > LISTED_SOURCES) {
+            message.append("\n").append(Component.translatable(
+                    "commands.drivebysable.list.more", shown.size() - LISTED_SOURCES));
+        }
 
         if (matched > shown.size()) {
             message.append("\n").append(Component.translatable(
-                    "commands.drivebysable.highlight.truncated", shown.size(), matched));
+                    "commands.drivebysable.highlight.truncated",
+                    SourceText.sourceNumber(shown.size()),
+                    SourceText.sourceNumber(matched)));
         }
 
-        return message;
-    }
-
-    private static Component outputs(final int count) {
-        return count == 1
-                ? Component.translatable("commands.drivebysable.outputs.one")
-                : Component.translatable("commands.drivebysable.outputs.many", count);
-    }
-
-    private static Component seconds(final int count) {
-        return count == 1
-                ? Component.translatable("commands.drivebysable.seconds.one")
-                : Component.translatable("commands.drivebysable.seconds.many", count);
+        return SourceText.message(message.append("\n\n").append(clearHint));
     }
 }

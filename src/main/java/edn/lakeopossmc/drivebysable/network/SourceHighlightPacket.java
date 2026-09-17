@@ -19,6 +19,8 @@ public record SourceHighlightPacket(
         int ticks
 ) implements CustomPacketPayload {
 
+    public static final int INFINITE = -1;
+
     public static final Type<SourceHighlightPacket> TYPE =
             new Type<>(DriveBySableMod.asResource("source_highlight"));
 

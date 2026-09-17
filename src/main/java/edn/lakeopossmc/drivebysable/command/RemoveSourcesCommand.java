@@ -7,16 +7,16 @@ import net.minecraft.ChatFormatting;
 import net.minecraft.commands.CommandSourceStack;
 import net.minecraft.commands.Commands;
 import net.minecraft.core.BlockPos;
-import net.minecraft.network.chat.ClickEvent;
 import net.minecraft.network.chat.Component;
-import net.minecraft.network.chat.HoverEvent;
 import net.minecraft.network.chat.MutableComponent;
 import net.minecraft.server.level.ServerLevel;
 
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 // --- /cable remove <target> --- //
 // * Disconnects every connection driven by the targeted Sources
@@ -50,32 +50,35 @@ public final class RemoveSourcesCommand {
         final CableNetworkManager manager = CableNetworkManager.get(level);
 
         if (selection.kind() == SourceTargets.Kind.ALL && !confirm(source, level)) {
-            int pending = 0;
-            for (final BlockPos pos : selection.sources()) {
-                pending += manager.countConnectionsFrom(pos);
-            }
-            final Component prompt = confirmationPrompt(level, selection.sources().size(), pending);
+            final Component prompt = confirmationPrompt(
+                    level, selection.sources().size(), countOutputs(manager, selection.sources()));
             source.sendSuccess(() -> prompt, false);
             return 0;
         }
 
-        // * Described before removal, while the counts are still there to read
+        // * Described before removal, while they are still there to read
+        final int outputs = countOutputs(manager, selection.sources());
         final List<Component> removed = new ArrayList<>();
-        int connections = 0;
         for (final BlockPos pos : selection.sources()) {
-            final int count = manager.countConnectionsFrom(pos);
             final MutableComponent description = SourceText.describe(level, pos);
 
             // * Commands never refund Cables, there is no player whose inventory they came from
             if (manager.removeAllFromSourceInternal(null, level, pos)) {
-                connections += count;
                 removed.add(description);
             }
         }
 
-        final Component feedback = feedback(removed, connections);
+        final Component feedback = feedback(removed, outputs);
         source.sendSuccess(() -> feedback, true);
         return removed.size();
+    }
+
+    private static int countOutputs(final CableNetworkManager manager, final List<BlockPos> sources) {
+        final Set<BlockPos> outputs = new LinkedHashSet<>();
+        for (final BlockPos pos : sources) {
+            outputs.addAll(manager.getOutputPositions(pos));
+        }
+        return outputs.size();
     }
 
     private static boolean confirm(final CommandSourceStack source, final ServerLevel level) {
@@ -92,46 +95,54 @@ public final class RemoveSourcesCommand {
         return false;
     }
 
-    private static Component confirmationPrompt(final ServerLevel level, final int sources, final int connections) {
-        final String dimension = level.dimension().location().toString();
-        final Component button = Component.translatable("commands.drivebysable.remove.confirm.button")
-                .withStyle(style -> style
-                        .withColor(ChatFormatting.RED)
-                        .withBold(true)
-                        .withClickEvent(new ClickEvent(ClickEvent.Action.RUN_COMMAND, "/cable remove all"))
-                        .withHoverEvent(new HoverEvent(
-                                HoverEvent.Action.SHOW_TEXT,
-                                Component.translatable("commands.drivebysable.remove.confirm.hover", dimension))));
+    // * Loud on purpose, this cannot be undone
+    private static Component confirmationPrompt(final ServerLevel level, final int sources, final int outputs) {
+        final MutableComponent warning = Component.empty().append(Component
+                .translatable("commands.drivebysable.remove.confirm.header")
+                .withStyle(ChatFormatting.RED, ChatFormatting.BOLD));
 
-        return Component.translatable(
-                "commands.drivebysable.remove.confirm",
-                SourceText.connections(connections),
-                SourceText.sources(sources),
-                dimension,
-                button
-        ).withStyle(ChatFormatting.YELLOW);
+        warning.append("\n").append(Component.translatable(
+                "commands.drivebysable.remove.confirm.body",
+                SourceText.sourceNumber(sources),
+                SourceText.outputNumber(outputs),
+                SourceText.dimension(level)
+        ).withStyle(ChatFormatting.RED));
+
+        warning.append("\n").append(Component.translatable(
+                "commands.drivebysable.remove.confirm.action",
+                SourceText.clickable(
+                        Component.translatable("commands.drivebysable.here"),
+                        "/dbs remove all",
+                        Component.translatable("commands.drivebysable.remove.confirm.hover",
+                                level.dimension().location().toString()))
+        ).withStyle(ChatFormatting.RED));
+
+        return SourceText.message(warning);
     }
 
-    private static Component feedback(final List<Component> removed, final int connections) {
+    private static Component feedback(final List<Component> removed, final int outputs) {
         if (removed.size() == 1) {
-            return Component.translatable("commands.drivebysable.remove.single", removed.get(0))
-                    .withStyle(ChatFormatting.GRAY);
+            return SourceText.message(Component.translatable("commands.drivebysable.remove.single", removed.get(0))
+                    .withStyle(ChatFormatting.GRAY));
         }
 
         final MutableComponent message = Component.translatable(
                 "commands.drivebysable.remove.multiple",
-                SourceText.connections(connections),
-                SourceText.sources(removed.size())
+                SourceText.sourceNumber(removed.size()),
+                SourceText.outputNumber(outputs)
         ).withStyle(ChatFormatting.GRAY);
 
+        message.append("\n");
+
         for (int i = 0; i < Math.min(LISTED_SOURCES, removed.size()); i++) {
-            message.append("\n").append(Component.translatable("commands.drivebysable.list.bullet", removed.get(i)));
+            message.append("\n").append(Component.translatable(
+                    "commands.drivebysable.list.bullet", removed.get(i)));
         }
         if (removed.size() > LISTED_SOURCES) {
             message.append("\n").append(Component.translatable(
                     "commands.drivebysable.list.more", removed.size() - LISTED_SOURCES));
         }
 
-        return message;
+        return SourceText.message(message);
     }
 }
