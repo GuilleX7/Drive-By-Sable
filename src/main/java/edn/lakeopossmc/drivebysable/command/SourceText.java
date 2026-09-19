@@ -6,6 +6,7 @@ import dev.ryanhcode.sable.sublevel.SubLevel;
 import edn.lakeopossmc.drivebysable.DriveBySableMod;
 import net.minecraft.ChatFormatting;
 import net.minecraft.core.BlockPos;
+import net.minecraft.core.Direction;
 import net.minecraft.network.chat.ClickEvent;
 import net.minecraft.network.chat.Component;
 import net.minecraft.network.chat.HoverEvent;
@@ -53,6 +54,15 @@ public final class SourceText {
     private static final int BLOCK_COLOR = ArmInteractionPoint.Mode.TAKE.getColor();
     private static final int OUTPUT_COLOR = ArmInteractionPoint.Mode.DEPOSIT.getColor();
 
+    public static MutableComponent describeOutput(final Level level, final BlockPos pos) {
+        return Component.translatable(
+                "commands.drivebysable.output",
+                bracketed(blockNameOf(level, pos).withStyle(style -> style.withColor(OUTPUT_COLOR))),
+                coordinates(level, pos),
+                levelLabel(level, pos)
+        ).withStyle(ChatFormatting.GRAY);
+    }
+
     // * "[Lever] at [12, 64, -30] for level: [World]"
     public static MutableComponent describe(final Level level, final BlockPos pos) {
         return Component.translatable(
@@ -64,12 +74,15 @@ public final class SourceText {
     }
 
     public static Component blockName(final Level level, final BlockPos pos) {
+        return bracketed(blockNameOf(level, pos).withStyle(style -> style.withColor(BLOCK_COLOR)));
+    }
+
+    private static MutableComponent blockNameOf(final Level level, final BlockPos pos) {
         final BlockState state = level.getBlockState(pos);
         // * A sublevel that is not loaded reads as air
-        final MutableComponent name = state.isAir()
+        return state.isAir()
                 ? Component.translatable("commands.drivebysable.source.unloaded")
                 : state.getBlock().getName();
-        return bracketed(name.withStyle(style -> style.withColor(BLOCK_COLOR)));
     }
 
     // * Green like vanilla /locate, clicking fills in a teleport
@@ -135,6 +148,37 @@ public final class SourceText {
                 .withStyle(style -> style
                         .withClickEvent(new ClickEvent(ClickEvent.Action.RUN_COMMAND, command))
                         .withHoverEvent(new HoverEvent(HoverEvent.Action.SHOW_TEXT, hover)));
+    }
+
+    public static Component channel(final String name) {
+        return bracketed(Component.literal(name).withStyle(style -> style.withColor(BLOCK_COLOR)));
+    }
+
+    public static Component outputChannel(final String name) {
+        return bracketed(Component.literal(name).withStyle(style -> style.withColor(OUTPUT_COLOR)));
+    }
+
+    public static Component signal(final int value) {
+        return bracketed(Component.literal(String.valueOf(value)).withStyle(ChatFormatting.RED));
+    }
+
+    public static Component sourceType(final Level level, final BlockPos pos) {
+        return bracketed(Component.translatable(
+                "commands.drivebysable.type." + SourceKind.of(level, pos)).withStyle(ChatFormatting.LIGHT_PURPLE));
+    }
+
+    public static Component side(final Direction direction) {
+        return bracketed(Component.literal(direction.getName()).withStyle(style -> style.withColor(OUTPUT_COLOR)));
+    }
+
+    // * Text that copies itself to the clipboard when clicked
+    public static Component copyable(final Component text) {
+        return bracketed(text.copy().withStyle(ChatFormatting.AQUA))
+                .withStyle(style -> style
+                        .withClickEvent(new ClickEvent(ClickEvent.Action.COPY_TO_CLIPBOARD, text.getString()))
+                        .withHoverEvent(new HoverEvent(
+                                HoverEvent.Action.SHOW_TEXT,
+                                Component.translatable("commands.drivebysable.copy.hover"))));
     }
 
     public static Component dimension(final ServerLevel level) {

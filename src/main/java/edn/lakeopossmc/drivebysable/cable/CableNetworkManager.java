@@ -999,6 +999,18 @@ public final class CableNetworkManager {
         return perChannel == null ? 0 : countConnections(perChannel);
     }
 
+    // * What this source drives, by channel, ordered for display
+    public Map<String, List<CableNetworkSink>> getConnections(final BlockPos source) {
+        final Map<String, Set<CableNetworkSink>> perChannel = sinks.get(source.asLong());
+        if (perChannel == null) {
+            return Map.of();
+        }
+
+        final Map<String, List<CableNetworkSink>> copy = new LinkedHashMap<>();
+        perChannel.keySet().stream().sorted().forEach(channel -> copy.put(channel, List.copyOf(perChannel.get(channel))));
+        return copy;
+    }
+
     // * Every block this source drives, across all its channels
     public Set<BlockPos> getOutputPositions(final BlockPos source) {
         final Map<String, Set<CableNetworkSink>> perChannel = sinks.get(source.asLong());

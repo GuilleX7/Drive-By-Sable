@@ -12,6 +12,7 @@ public final class CableCommands {
     public static void register(final RegisterCommandsEvent event) {
         event.getDispatcher().register(Commands.literal("dbs")
                 .then(RemoveSourcesCommand.build())
-                .then(HighlightSourcesCommand.build()));
+                .then(HighlightSourcesCommand.build())
+                .then(InfoSourcesCommand.build()));
     }
 }
