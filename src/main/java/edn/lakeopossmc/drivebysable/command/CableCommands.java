@@ -11,8 +11,12 @@ public final class CableCommands {
 
     public static void register(final RegisterCommandsEvent event) {
         event.getDispatcher().register(Commands.literal("dbs")
-                .then(RemoveSourcesCommand.build())
-                .then(HighlightSourcesCommand.build())
-                .then(InfoSourcesCommand.build()));
+                .then(RemoveCommand.build())
+                .then(HighlightCommand.build())
+                .then(InfoCommand.build())
+                .then(HelpCommand.build())
+                .then(Commands.literal("listNext")
+                        .requires(source -> source.hasPermission(Commands.LEVEL_GAMEMASTERS))
+                        .executes(context -> CableLists.next(context.getSource()))));
     }
 }

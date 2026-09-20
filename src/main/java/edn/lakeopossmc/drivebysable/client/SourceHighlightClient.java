@@ -29,16 +29,16 @@ import net.neoforged.neoforge.event.level.LevelEvent;
 
 import javax.annotation.Nullable;
 import java.util.ArrayList;
-import java.util.LinkedHashSet;
+import java.util.LinkedHashMap;
+import java.util.Map;
 import java.util.List;
-import java.util.Set;
 
 // --- CLIENT SIDE OF /dbs highlight --- //
 @EventBusSubscriber(modid = DriveBySableMod.MOD_ID, value = Dist.CLIENT)
 public final class SourceHighlightClient {
 
-    private static final String SOURCE_SLOT = "drivebysable:sourceHighlight:source:";
-    private static final String OUTPUT_SLOT = "drivebysable:sourceHighlight:output:";
+    private static final String TARGET_SLOT = "drivebysable:sourceHighlight:target:";
+    private static final String CONNECTED_SLOT = "drivebysable:sourceHighlight:connected:";
 
     private static final int SOURCE_COLOR = ArmInteractionPoint.Mode.TAKE.getColor();
     private static final int OUTPUT_COLOR = ArmInteractionPoint.Mode.DEPOSIT.getColor();
@@ -52,14 +52,22 @@ public final class SourceHighlightClient {
     private static final int BLINK_PERIOD = 16;
     private static final int BLINK_HALF = 8;
 
-    private static final float OUTLINE_WIDTH = 1 / 32.0F;
-    private static final double LINK_THICKNESS = OUTLINE_WIDTH;
+    private static final float STRONG_WIDTH = 1 / 24.0F;
+    private static final float WEAK_WIDTH = 1 / 64.0F;
+    private static final double LINK_THICKNESS = 1 / 48.0D;
 
     private static final AABB UNIT_CUBE = new AABB(0.0D, 0.0D, 0.0D, 1.0D, 1.0D, 1.0D);
 
-    private static final Set<BlockPos> sources = new LinkedHashSet<>();
-    private static final Set<BlockPos> outputs = new LinkedHashSet<>();
-    private static final List<BlockPos[]> links = new ArrayList<>();
+    private static final Map<BlockPos, Boolean> blockTargets = new LinkedHashMap<>();
+    private static final Map<BlockPos, Boolean> blockConnected = new LinkedHashMap<>();
+    // * Module endpoints, drawn by the block's own renderer through moduleOutlinesFor
+    private static final Map<BlockPos, Map<String, Boolean>> moduleTargets = new LinkedHashMap<>();
+    private static final Map<BlockPos, Map<String, Boolean>> moduleConnected = new LinkedHashMap<>();
+    // * Target then connected, one pair per connection
+    private static final List<Endpoint[]> links = new ArrayList<>();
+
+    private record Endpoint(BlockPos pos, String module) {
+    }
 
     @Nullable
     private static ResourceKey<Level> dimension;
@@ -69,45 +77,92 @@ public final class SourceHighlightClient {
     private SourceHighlightClient() {
     }
 
-    public static void show(
-            final List<BlockPos> newSources,
-            final List<BlockPos> newOutputs,
-            final List<Integer> owners,
-            final int ticks
-    ) {
+    public static void show(final SourceHighlightPacket packet) {
         clear();
 
         final Minecraft minecraft = Minecraft.getInstance();
-        if (ticks == 0 || minecraft.level == null) {
+        if (packet.ticks() == 0 || minecraft.level == null) {
             return;
         }
 
-        for (final BlockPos source : newSources) {
-            sources.add(source.immutable());
+        final List<Endpoint> targeted = new ArrayList<>(packet.targets().size());
+        for (final SourceHighlightPacket.HighlightEndpoint endpoint : packet.targets()) {
+            targeted.add(add(endpoint, true));
         }
 
-        final int count = Math.min(newOutputs.size(), owners.size());
-        for (int index = 0; index < count; index++) {
-            final BlockPos output = newOutputs.get(index).immutable();
-            final int owner = owners.get(index);
+        final int count = Math.min(packet.connected().size(), packet.owners().size());
+        for (int i = 0; i < count; i++) {
+            final Endpoint other = add(packet.connected().get(i), false);
 
-            // * A block that is also a Source keeps the Source colour
-            if (!sources.contains(output)) {
-                outputs.add(output);
-            }
-            if (owner >= 0 && owner < newSources.size()) {
-                links.add(new BlockPos[]{newSources.get(owner), output});
+            final int owner = packet.owners().get(i);
+            if (owner >= 0 && owner < targeted.size()) {
+                links.add(new Endpoint[]{targeted.get(owner), other});
             }
         }
 
         dimension = minecraft.level.dimension();
-        ticksRemaining = ticks;
-        infinite = ticks == SourceHighlightPacket.INFINITE;
+        ticksRemaining = packet.ticks();
+        infinite = packet.ticks() == SourceHighlightPacket.INFINITE;
+    }
+
+    private static Endpoint add(final SourceHighlightPacket.HighlightEndpoint endpoint, final boolean target) {
+        final BlockPos pos = endpoint.pos().immutable();
+
+        if (!endpoint.module().isEmpty()) {
+            final Map<BlockPos, Map<String, Boolean>> into = target ? moduleTargets : moduleConnected;
+            into.computeIfAbsent(pos, ignored -> new LinkedHashMap<>()).put(endpoint.module(), endpoint.source());
+            if (target) {
+                final Map<String, Boolean> weaker = moduleConnected.get(pos);
+                if (weaker != null) {
+                    weaker.remove(endpoint.module());
+                }
+            }
+            return new Endpoint(pos, endpoint.module());
+        }
+
+        if (target) {
+            blockTargets.put(pos, endpoint.source());
+            blockConnected.remove(pos);
+        } else if (!blockTargets.containsKey(pos)) {
+            blockConnected.put(pos, endpoint.source());
+        }
+        return new Endpoint(pos, "");
+    }
+
+    public static Map<String, Integer> moduleOutlinesFor(final BlockPos pos) {
+        if (!isActive()) {
+            return Map.of();
+        }
+
+        final Map<String, Boolean> targeted = moduleTargets.get(pos);
+        final Map<String, Boolean> other = moduleConnected.get(pos);
+        if (targeted == null && other == null) {
+            return Map.of();
+        }
+
+        final boolean bright = isBrightPhase();
+        final Map<String, Integer> outlines = new LinkedHashMap<>();
+        if (other != null) {
+            other.forEach((module, source) -> outlines.put(module, colorFor(source, bright)));
+        }
+        if (targeted != null) {
+            targeted.forEach((module, source) -> outlines.put(module, colorFor(source, bright)));
+        }
+        return outlines;
+    }
+
+    private static int colorFor(final boolean source, final boolean bright) {
+        if (source) {
+            return bright ? SOURCE_COLOR : SOURCE_COLOR_DIM;
+        }
+        return bright ? OUTPUT_COLOR : OUTPUT_COLOR_DIM;
     }
 
     public static void clear() {
-        sources.clear();
-        outputs.clear();
+        blockTargets.clear();
+        blockConnected.clear();
+        moduleTargets.clear();
+        moduleConnected.clear();
         links.clear();
         dimension = null;
         ticksRemaining = 0;
@@ -127,26 +182,29 @@ public final class SourceHighlightClient {
         }
 
         final boolean bright = isBrightPhase();
-        final int sourceColor = bright ? SOURCE_COLOR : SOURCE_COLOR_DIM;
-        final int outputColor = bright ? OUTPUT_COLOR : OUTPUT_COLOR_DIM;
 
-        for (final BlockPos pos : sources) {
-            outline(minecraft.level, SOURCE_SLOT, pos, sourceColor);
-        }
-        for (final BlockPos pos : outputs) {
-            outline(minecraft.level, OUTPUT_SLOT, pos, outputColor);
-        }
+        // * The side asked about is drawn heavier than whatever it is connected to
+        blockTargets.forEach((pos, source) ->
+                outline(minecraft.level, TARGET_SLOT, pos, colorFor(source, bright), STRONG_WIDTH));
+        blockConnected.forEach((pos, source) ->
+                outline(minecraft.level, CONNECTED_SLOT, pos, colorFor(source, bright), WEAK_WIDTH));
 
         if (!infinite && --ticksRemaining <= 0) {
             clear();
         }
     }
 
-    private static void outline(final Level level, final String slot, final BlockPos pos, final int color) {
+    private static void outline(
+            final Level level,
+            final String slot,
+            final BlockPos pos,
+            final int color,
+            final float width
+    ) {
         Outliner.getInstance()
                 .showAABB(slot + pos.asLong(), blockBounds(level, pos))
                 .colored(color)
-                .lineWidth(OUTLINE_WIDTH)
+                .lineWidth(width)
                 .disableLineNormals();
     }
 
@@ -168,7 +226,7 @@ public final class SourceHighlightClient {
         final VertexConsumer buffer = buffers.getBuffer(RenderType.debugQuads());
         final int color = isBrightPhase() ? LINK_COLOR : LINK_COLOR_DIM;
 
-        for (final BlockPos[] link : links) {
+        for (final Endpoint[] link : links) {
             drawLink(
                     poseStack,
                     buffer,
@@ -216,9 +274,11 @@ public final class SourceHighlightClient {
         poseStack.popPose();
     }
 
-    private static Vec3 worldCentreOf(final Level level, final BlockPos pos) {
-        final Vec3 centre = blockBounds(level, pos).getCenter();
-        final SubLevel subLevel = BackupDriveCapture.subLevelOf(level, pos);
+    private static Vec3 worldCentreOf(final Level level, final Endpoint endpoint) {
+        final Vec3 centre = endpoint.module().isEmpty()
+                ? blockBounds(level, endpoint.pos()).getCenter()
+                : ClientCableNetworkHandler.moduleAnchor(level, endpoint.pos(), endpoint.module());
+        final SubLevel subLevel = BackupDriveCapture.subLevelOf(level, endpoint.pos());
         return subLevel == null ? centre : subLevel.logicalPose().transformPosition(centre);
     }
     //#endregion

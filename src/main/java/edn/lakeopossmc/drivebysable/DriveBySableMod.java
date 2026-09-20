@@ -1,6 +1,7 @@
 package edn.lakeopossmc.drivebysable;
 
 import edn.lakeopossmc.drivebysable.cable.SubLevelPlotCleanup;
+import edn.lakeopossmc.drivebysable.command.CableCommandArguments;
 import edn.lakeopossmc.drivebysable.command.CableCommands;
 import com.mojang.logging.LogUtils;
 import com.simibubi.create.foundation.item.ItemDescription;
@@ -50,6 +51,7 @@ public class DriveBySableMod {
             CableCreativeTabs.register(modEventBus);
         }
         CableSounds.register(modEventBus);
+        CableCommandArguments.register(modEventBus);
         ComputerCraftCompat.register(modEventBus);
         modEventBus.addListener(CablePackets::register);
         modEventBus.addListener(this::commonSetup);

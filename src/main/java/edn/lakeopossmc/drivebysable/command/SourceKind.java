@@ -1,9 +1,6 @@
 package edn.lakeopossmc.drivebysable.command;
 
-import edn.lakeopossmc.drivebysable.blocks.AbstractDirectionalHubBlock;
-import edn.lakeopossmc.drivebysable.blocks.CableTypewriterHubBlock;
-import edn.lakeopossmc.drivebysable.blocks.IntegratedSensorBusBlock;
-import edn.lakeopossmc.drivebysable.blocks.MultiChannelCableBusBlock;
+import edn.lakeopossmc.drivebysable.cable.ModuleSinkTarget;
 import edn.lakeopossmc.drivebysable.cable.MultiChannelCableSource;
 import edn.lakeopossmc.drivebysable.cable.SubTargetCableEndpoint;
 import net.minecraft.core.BlockPos;
@@ -12,28 +9,37 @@ import net.minecraft.world.level.block.Block;
 
 import java.util.Locale;
 
-// --- WHAT KIND OF SOURCE A BLOCK IS --- //
-// * Named in command output so it is clear what is being read at a glance
+// --- WHAT KIND OF BLOCK THIS IS --- //
+// * Panel: holds modules or module channels
+// * Bus: many channels of both kinds, but no modules
+// * Hub: many channels, none of them sink channels
+// * Block: only the world channel, or nothing that can be told apart
 public enum SourceKind {
     HUB,
     BUS,
-    MODULES,
-    BLOCK;
+    BLOCK,
+    PANEL;
 
     public static SourceKind of(final Level level, final BlockPos pos) {
         final Block block = level.getBlockState(pos).getBlock();
 
-        if (block instanceof AbstractDirectionalHubBlock || block instanceof CableTypewriterHubBlock) {
-            return HUB;
+        if (block instanceof final SubTargetCableEndpoint endpoint
+                && !endpoint.cable$getSubTargets(level, pos).isEmpty()) {
+            return PANEL;
         }
-        if (block instanceof MultiChannelCableBusBlock || block instanceof IntegratedSensorBusBlock) {
+
+        final boolean sends = block instanceof MultiChannelCableSource;
+        final boolean receives = block instanceof ModuleSinkTarget;
+
+        if (sends && receives) {
             return BUS;
         }
-        // * Anything that splits itself into named parts or channels
-        if (block instanceof SubTargetCableEndpoint || block instanceof MultiChannelCableSource) {
-            return MODULES;
+        if (sends) {
+            return HUB;
         }
-        // * A plain block
+        if (receives) {
+            return PANEL;
+        }
         return BLOCK;
     }
 

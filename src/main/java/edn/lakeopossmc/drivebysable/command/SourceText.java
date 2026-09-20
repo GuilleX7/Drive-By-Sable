@@ -23,6 +23,7 @@ import java.util.List;
 public final class SourceText {
 
     public static final String CHAT_MARKER = DriveBySableMod.MOD_ID + ":chat";
+    private static final String SEPARATOR = "-".repeat(32);
 
     public static final String BULLET = "\u2022";
     public static final String BULLET_PREFIX = " " + BULLET + " ";
@@ -30,9 +31,15 @@ public final class SourceText {
     private SourceText() {
     }
 
+    public static Component separator() {
+        return Component.literal(SEPARATOR).withStyle(ChatFormatting.WHITE);
+    }
+
     public static MutableComponent message(final MutableComponent message) {
         return Component.empty()
                 .append(Component.literal("").withStyle(style -> style.withInsertion(CHAT_MARKER)))
+                .append(separator())
+                .append("\n")
                 .append(message);
     }
 
@@ -47,42 +54,84 @@ public final class SourceText {
         return Sable.HELPER.projectOutOfSubLevel(level, Vec3.atCenterOf(pos));
     }
 
-    public static BlockPos worldBlock(final Level level, final BlockPos pos) {
+    private static BlockPos worldBlock(final Level level, final BlockPos pos) {
         return BlockPos.containing(worldCentre(level, pos));
     }
 
     private static final int BLOCK_COLOR = ArmInteractionPoint.Mode.TAKE.getColor();
     private static final int OUTPUT_COLOR = ArmInteractionPoint.Mode.DEPOSIT.getColor();
 
-    public static MutableComponent describeOutput(final Level level, final BlockPos pos) {
-        return Component.translatable(
-                "commands.drivebysable.output",
-                bracketed(blockNameOf(level, pos).withStyle(style -> style.withColor(OUTPUT_COLOR))),
-                coordinates(level, pos),
-                levelLabel(level, pos)
-        ).withStyle(ChatFormatting.GRAY);
+    //#region // --- CLICKABLE NAMES --- //
+    public static Component id(final Level level, final BlockPos pos, final boolean source) {
+        return bracketed(blockNameOf(level, pos).withStyle(style -> style.withColor(source ? BLOCK_COLOR : OUTPUT_COLOR)));
     }
 
-    // * "[Lever] at [12, 64, -30] for level: [World]"
-    public static MutableComponent describe(final Level level, final BlockPos pos) {
-        return Component.translatable(
-                "commands.drivebysable.source",
-                blockName(level, pos),
-                coordinates(level, pos),
-                levelLabel(level, pos)
-        ).withStyle(ChatFormatting.GRAY);
+    public static Component idLink(final Level level, final BlockPos pos, final boolean source) {
+        return runs(id(level, pos, source), "/dbs info " + coordSelector(pos, source) + " summarize",
+                Component.translatable("commands.drivebysable.click.summarize"));
     }
 
-    public static Component blockName(final Level level, final BlockPos pos) {
-        return bracketed(blockNameOf(level, pos).withStyle(style -> style.withColor(BLOCK_COLOR)));
+    public static Component moduleName(final CableEndpoint endpoint) {
+        return bracketed(Component.literal(endpoint.module())
+                .withStyle(style -> style.withColor(endpoint.source() ? BLOCK_COLOR : OUTPUT_COLOR)));
     }
 
-    private static MutableComponent blockNameOf(final Level level, final BlockPos pos) {
-        final BlockState state = level.getBlockState(pos);
-        // * A sublevel that is not loaded reads as air
-        return state.isAir()
-                ? Component.translatable("commands.drivebysable.source.unloaded")
-                : state.getBlock().getName();
+    public static Component moduleLink(final Level level, final CableEndpoint endpoint) {
+        return runs(moduleName(endpoint),
+                "/dbs info " + coordSelector(endpoint.pos(), endpoint.source())
+                        + " @mod[" + endpoint.module() + "] summarize",
+                Component.translatable("commands.drivebysable.click.summarize"));
+    }
+
+    public static Component channelLink(
+            final Level level,
+            final CableEndpoint endpoint,
+            final String channel,
+            final boolean source
+    ) {
+        final Component name = source ? channel(channel) : outputChannel(channel);
+        final String module = endpoint.hasModule() ? " @mod[" + endpoint.module() + "]" : "";
+        return runs(name,
+                "/dbs info " + coordSelector(endpoint.pos(), source) + module + " getChannel[" + channel + "]",
+                Component.translatable("commands.drivebysable.click.channel"));
+    }
+
+    private static String coordSelector(final BlockPos pos, final boolean source) {
+        return "@coord[" + pos.getX() + ", " + pos.getY() + ", " + pos.getZ()
+                + ", " + (source ? "source" : "output") + "]";
+    }
+
+    private static Component runs(final Component text, final String command, final Component hover) {
+        return text.copy().withStyle(style -> style
+                .withClickEvent(new ClickEvent(ClickEvent.Action.RUN_COMMAND, command))
+                .withHoverEvent(new HoverEvent(HoverEvent.Action.SHOW_TEXT, hover)));
+    }
+    //#endregion
+
+    public static Component channel(final String name) {
+        return bracketed(Component.literal(name).withStyle(style -> style.withColor(BLOCK_COLOR)));
+    }
+
+    public static Component outputChannel(final String name) {
+        return bracketed(Component.literal(name).withStyle(style -> style.withColor(OUTPUT_COLOR)));
+    }
+
+    public static Component signal(final int value) {
+        return bracketed(Component.literal(String.valueOf(value)).withStyle(ChatFormatting.RED));
+    }
+
+    public static Component sourceType(final Level level, final BlockPos pos) {
+        return bracketed(Component.translatable(
+                "commands.drivebysable.type." + SourceKind.of(level, pos)).withStyle(ChatFormatting.LIGHT_PURPLE));
+    }
+
+    public static Component side(final Direction direction) {
+        return bracketed(Component.literal(direction.getName()).withStyle(style -> style.withColor(OUTPUT_COLOR)));
+    }
+
+    public static Component dimension(final ServerLevel level) {
+        return bracketed(Component.literal(level.dimension().location().toString())
+                .withStyle(ChatFormatting.LIGHT_PURPLE));
     }
 
     // * Green like vanilla /locate, clicking fills in a teleport
@@ -120,13 +169,6 @@ public final class SourceText {
                                 Component.translatable("commands.drivebysable.level.hover", id))));
     }
 
-    private static MutableComponent bracketed(final Component inner) {
-        return Component.empty()
-                .append(Component.literal("[").withStyle(ChatFormatting.WHITE))
-                .append(inner)
-                .append(Component.literal("]").withStyle(ChatFormatting.WHITE));
-    }
-
     public static Component number(final int value) {
         return bracketed(Component.literal(String.valueOf(value)).withStyle(ChatFormatting.GREEN));
     }
@@ -150,51 +192,18 @@ public final class SourceText {
                         .withHoverEvent(new HoverEvent(HoverEvent.Action.SHOW_TEXT, hover)));
     }
 
-    public static Component channel(final String name) {
-        return bracketed(Component.literal(name).withStyle(style -> style.withColor(BLOCK_COLOR)));
+    private static MutableComponent blockNameOf(final Level level, final BlockPos pos) {
+        final BlockState state = level.getBlockState(pos);
+        // * A sublevel that is not loaded reads as air
+        return state.isAir()
+                ? Component.translatable("commands.drivebysable.source.unloaded")
+                : state.getBlock().getName();
     }
 
-    public static Component outputChannel(final String name) {
-        return bracketed(Component.literal(name).withStyle(style -> style.withColor(OUTPUT_COLOR)));
-    }
-
-    public static Component signal(final int value) {
-        return bracketed(Component.literal(String.valueOf(value)).withStyle(ChatFormatting.RED));
-    }
-
-    public static Component sourceType(final Level level, final BlockPos pos) {
-        return bracketed(Component.translatable(
-                "commands.drivebysable.type." + SourceKind.of(level, pos)).withStyle(ChatFormatting.LIGHT_PURPLE));
-    }
-
-    public static Component side(final Direction direction) {
-        return bracketed(Component.literal(direction.getName()).withStyle(style -> style.withColor(OUTPUT_COLOR)));
-    }
-
-    // * Text that copies itself to the clipboard when clicked
-    public static Component copyable(final Component text) {
-        return bracketed(text.copy().withStyle(ChatFormatting.AQUA))
-                .withStyle(style -> style
-                        .withClickEvent(new ClickEvent(ClickEvent.Action.COPY_TO_CLIPBOARD, text.getString()))
-                        .withHoverEvent(new HoverEvent(
-                                HoverEvent.Action.SHOW_TEXT,
-                                Component.translatable("commands.drivebysable.copy.hover"))));
-    }
-
-    public static Component dimension(final ServerLevel level) {
-        return bracketed(Component.literal(level.dimension().location().toString())
-                .withStyle(ChatFormatting.LIGHT_PURPLE));
-    }
-
-    public static Component connections(final int count) {
-        return count == 1
-                ? Component.translatable("commands.drivebysable.connections.one")
-                : Component.translatable("commands.drivebysable.connections.many", count);
-    }
-
-    public static Component sources(final int count) {
-        return count == 1
-                ? Component.translatable("commands.drivebysable.sources.one")
-                : Component.translatable("commands.drivebysable.sources.many", count);
+    private static MutableComponent bracketed(final Component inner) {
+        return Component.empty()
+                .append(Component.literal("[").withStyle(ChatFormatting.WHITE))
+                .append(inner)
+                .append(Component.literal("]").withStyle(ChatFormatting.WHITE));
     }
 }

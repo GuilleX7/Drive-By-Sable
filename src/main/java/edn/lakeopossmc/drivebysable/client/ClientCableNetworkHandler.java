@@ -815,6 +815,11 @@ public final class ClientCableNetworkHandler {
                 : null;
     }
 
+    // * Where a highlight should anchor a line
+    public static Vec3 moduleAnchor(final Level level, final BlockPos pos, @Nullable final String subTarget) {
+        return anchorOf(level, pos, subTarget);
+    }
+
     private static List<CableOutlineBox> subTargetOutline(final Level level, final BlockPos pos, @Nullable final String subTarget) {
         if (subTarget == null || !(level.getBlockState(pos).getBlock() instanceof final SubTargetCableEndpoint endpoint)) {
             return List.of();
@@ -1883,6 +1888,15 @@ public final class ClientCableNetworkHandler {
         final Map<String, Integer> fromTools = moduleOutlines.getOrDefault(pos, Map.of());
         final Map<String, Integer> fromPreview = BackupDrivePreview.moduleOutlinesFor(pos);
         final Map<String, Integer> fromLoad = BackupDriveLoadHighlight.moduleOutlinesFor(pos);
+        final Map<String, Integer> fromCommand = SourceHighlightClient.moduleOutlinesFor(pos);
+
+        if (!fromCommand.isEmpty()) {
+            final Map<String, Integer> merged = new LinkedHashMap<>(fromTools);
+            merged.putAll(fromPreview);
+            merged.putAll(fromLoad);
+            merged.putAll(fromCommand);
+            return merged;
+        }
 
         if (!fromLoad.isEmpty()) {
             final Map<String, Integer> merged = new LinkedHashMap<>(fromTools);

@@ -13,22 +13,32 @@ import java.util.List;
 
 // --- WHAT /dbs highlight SHOULD OUTLINE --- //
 public record SourceHighlightPacket(
-        List<BlockPos> sources,
-        List<BlockPos> outputs,
-        List<Integer> outputOwners,
+        List<HighlightEndpoint> targets,
+        List<HighlightEndpoint> connected,
+        List<Integer> owners,
         int ticks
 ) implements CustomPacketPayload {
 
     public static final int INFINITE = -1;
+
+    public record HighlightEndpoint(BlockPos pos, String module, boolean source) {
+        public static final StreamCodec<ByteBuf, HighlightEndpoint> STREAM_CODEC =
+                StreamCodec.composite(
+                        BlockPos.STREAM_CODEC, HighlightEndpoint::pos,
+                        ByteBufCodecs.STRING_UTF8, HighlightEndpoint::module,
+                        ByteBufCodecs.BOOL, HighlightEndpoint::source,
+                        HighlightEndpoint::new
+                );
+    }
 
     public static final Type<SourceHighlightPacket> TYPE =
             new Type<>(DriveBySableMod.asResource("source_highlight"));
 
     public static final StreamCodec<ByteBuf, SourceHighlightPacket> STREAM_CODEC =
             StreamCodec.composite(
-                    BlockPos.STREAM_CODEC.apply(ByteBufCodecs.list()), SourceHighlightPacket::sources,
-                    BlockPos.STREAM_CODEC.apply(ByteBufCodecs.list()), SourceHighlightPacket::outputs,
-                    ByteBufCodecs.VAR_INT.apply(ByteBufCodecs.list()), SourceHighlightPacket::outputOwners,
+                    HighlightEndpoint.STREAM_CODEC.apply(ByteBufCodecs.list()), SourceHighlightPacket::targets,
+                    HighlightEndpoint.STREAM_CODEC.apply(ByteBufCodecs.list()), SourceHighlightPacket::connected,
+                    ByteBufCodecs.VAR_INT.apply(ByteBufCodecs.list()), SourceHighlightPacket::owners,
                     ByteBufCodecs.VAR_INT, SourceHighlightPacket::ticks,
                     SourceHighlightPacket::new
             );
@@ -43,11 +53,6 @@ public record SourceHighlightPacket(
     }
 
     public static void handle(final SourceHighlightPacket payload, final IPayloadContext context) {
-        context.enqueueWork(() -> SourceHighlightClient.show(
-                payload.sources(),
-                payload.outputs(),
-                payload.outputOwners(),
-                payload.ticks()
-        ));
+        context.enqueueWork(() -> SourceHighlightClient.show(payload));
     }
 }

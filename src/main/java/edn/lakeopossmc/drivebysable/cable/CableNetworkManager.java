@@ -14,7 +14,6 @@ import edn.lakeopossmc.drivebysable.cable.SubTargetCableEndpoint;
 import edn.lakeopossmc.drivebysable.cable.graph.CableNetworkNode;
 import edn.lakeopossmc.drivebysable.blocks.IntegratedSensorBusBlockEntity;
 import edn.lakeopossmc.drivebysable.blocks.MultiChannelCableBusBlockEntity;
-import edn.lakeopossmc.drivebysable.blocks.NetworkBackupDriveBlockEntity;
 import edn.lakeopossmc.drivebysable.cable.graph.CableNetworkNode.CableNetworkSink;
 import edn.lakeopossmc.drivebysable.legacy.LegacyTypewriterCompat;
 import edn.lakeopossmc.drivebysable.legacy.LegacyWireCompat;
@@ -787,11 +786,20 @@ public final class CableNetworkManager {
     }
 
     // * Drops every connection pointing at one module channel
+    public boolean removeAllToSinkInternal(final Level level, final BlockPos sinkPos) {
+        return removeIncoming(level, sinkPos, null);
+    }
+
     public boolean removeAllToModuleSinkInternal(final Level level, final BlockPos sinkPos, final String sinkChannel) {
         if (sinkChannel == null || sinkChannel.isEmpty()) {
             return false;
         }
 
+        return removeIncoming(level, sinkPos, sinkChannel);
+    }
+
+    // * A null channel takes them all
+    private boolean removeIncoming(final Level level, final BlockPos sinkPos, @Nullable final String sinkChannel) {
         final long sinkKey = sinkPos.asLong();
         final Set<SinkReference> references = sinkReferences.get(sinkKey);
         if (references == null || references.isEmpty()) {
@@ -800,7 +808,7 @@ public final class CableNetworkManager {
 
         boolean changed = false;
         for (final SinkReference reference : Set.copyOf(references)) {
-            if (!sinkChannel.equals(reference.sinkChannel())) {
+            if (sinkChannel != null && !sinkChannel.equals(reference.sinkChannel())) {
                 continue;
             }
 
@@ -814,7 +822,7 @@ public final class CableNetworkManager {
                 continue;
             }
 
-            final CableNetworkSink sink = new CableNetworkSink(sinkKey, reference.direction(), sinkChannel);
+            final CableNetworkSink sink = new CableNetworkSink(sinkKey, reference.direction(), reference.sinkChannel());
             if (!sinksOnChannel.remove(sink)) {
                 continue;
             }
@@ -980,23 +988,57 @@ public final class CableNetworkManager {
         return values == null ? Map.of() : Map.copyOf(values);
     }
 
-    // * Every block that currently drives at least one connection
-    public List<BlockPos> getSourcePositions() {
-        final List<BlockPos> positions = new ArrayList<>(sinks.size());
-        for (final long key : sinks.keySet()) {
-            positions.add(BlockPos.of(key));
-        }
-        return positions;
-    }
-
     public boolean isSource(final BlockPos pos) {
         return sinks.containsKey(pos.asLong());
     }
 
-    // * Across every channel on the source
-    public int countConnectionsFrom(final BlockPos source) {
-        final Map<String, Set<CableNetworkSink>> perChannel = sinks.get(source.asLong());
-        return perChannel == null ? 0 : countConnections(perChannel);
+    // * One connection seen from the receiving end
+    public record IncomingConnection(BlockPos source, String channel, Direction direction, String sinkChannel) {
+        public boolean isModule() {
+            return !sinkChannel.isEmpty();
+        }
+    }
+
+    // * What drives this block
+    public List<IncomingConnection> getIncoming(final BlockPos sinkPos) {
+        final Set<SinkReference> references = sinkReferences.get(sinkPos.asLong());
+        if (references == null) {
+            return List.of();
+        }
+
+        final List<IncomingConnection> incoming = new ArrayList<>(references.size());
+        for (final SinkReference reference : references) {
+            incoming.add(new IncomingConnection(
+                    BlockPos.of(reference.sourcePos()),
+                    reference.channel(),
+                    Direction.from3DDataValue(reference.direction()),
+                    reference.sinkChannel()));
+        }
+        incoming.sort(Comparator
+                .comparing(IncomingConnection::sinkChannel)
+                .thenComparing(IncomingConnection::channel));
+        return incoming;
+    }
+
+    public boolean isOutput(final BlockPos pos) {
+        final Set<SinkReference> references = sinkReferences.get(pos.asLong());
+        return references != null && !references.isEmpty();
+    }
+
+    public boolean isEndpoint(final BlockPos pos) {
+        return isSource(pos) || isOutput(pos);
+    }
+
+    // * Everything the network touches
+    public List<BlockPos> getEndpointPositions() {
+        final Set<Long> keys = new LinkedHashSet<>(sinks.keySet());
+        keys.addAll(sinkReferences.keySet());
+
+        final List<BlockPos> positions = new ArrayList<>(keys.size());
+        for (final long key : keys) {
+            positions.add(BlockPos.of(key));
+        }
+        return positions;
     }
 
     // * What this source drives, by channel, ordered for display
@@ -1009,22 +1051,6 @@ public final class CableNetworkManager {
         final Map<String, List<CableNetworkSink>> copy = new LinkedHashMap<>();
         perChannel.keySet().stream().sorted().forEach(channel -> copy.put(channel, List.copyOf(perChannel.get(channel))));
         return copy;
-    }
-
-    // * Every block this source drives, across all its channels
-    public Set<BlockPos> getOutputPositions(final BlockPos source) {
-        final Map<String, Set<CableNetworkSink>> perChannel = sinks.get(source.asLong());
-        if (perChannel == null) {
-            return Set.of();
-        }
-
-        final Set<BlockPos> outputs = new LinkedHashSet<>();
-        for (final Set<CableNetworkSink> sinksOnChannel : perChannel.values()) {
-            for (final CableNetworkSink sink : sinksOnChannel) {
-                outputs.add(BlockPos.of(sink.position()));
-            }
-        }
-        return outputs;
     }
 
     // * Deep copy so callers cant mutate live state
@@ -2704,7 +2730,7 @@ public final class CableNetworkManager {
     }
 
     // * Drops every source and output whose position matches
-    public int purgeEndpointsWhere(final Level level, final LongPredicate isStale, final String reason) {
+    private int purgeEndpointsWhere(final Level level, final LongPredicate isStale, final String reason) {
         final List<Long> staleSources = new ArrayList<>();
         for (final long sourceKey : sinks.keySet()) {
             if (isStale.test(sourceKey)) {
