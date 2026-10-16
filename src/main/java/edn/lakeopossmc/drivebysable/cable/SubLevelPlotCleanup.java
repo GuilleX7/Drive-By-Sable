@@ -23,6 +23,12 @@ public final class SubLevelPlotCleanup {
     }
 
     private record Observer(ServerLevel level) implements SubLevelObserver {
+        // * A loaded sublevel brings its cable ends with it, so their signals are worked out again
+        @Override
+        public void onSubLevelAdded(final SubLevel subLevel) {
+            CableNetworkManager.onSubLevelLoaded(this.level, subLevel.getPlot());
+        }
+
         @Override
         public void onSubLevelRemoved(final SubLevel subLevel, final SubLevelRemovalReason reason) {
             // * UNLOADED keeps the plot reserved and the blocks come back to the same spot

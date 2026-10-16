@@ -104,6 +104,9 @@ public final class CableNetworkManager {
     private final Runnable dirtyMarker;
     private boolean attachedToLevel;
     private boolean graphDirty;
+    // * Ticks until a second look after a sublevel loaded, 0 when none is due
+    private int lateRefresh;
+    private static final int LATE_REFRESH_TICKS = 20;
 
     CableNetworkManager(final Runnable dirtyMarker) {
         this.dirtyMarker = dirtyMarker;
@@ -3328,7 +3331,36 @@ public final class CableNetworkManager {
                 && SectionPos.blockToSectionCoord(pos.getZ()) == chunk.z;
     }
 
+    public static void onSubLevelLoaded(final ServerLevel level, final LevelPlot plot) {
+        get(level).markDirtyIfPlotInvolved(plot);
+    }
+
+    private void markDirtyIfPlotInvolved(final LevelPlot plot) {
+        for (final Map.Entry<Long, Map<String, Set<CableNetworkSink>>> sourceEntry : sinks.entrySet()) {
+            if (isInPlot(plot, sourceEntry.getKey())) {
+                markPlotDirty();
+                return;
+            }
+            for (final Set<CableNetworkSink> sinksOnChannel : sourceEntry.getValue().values()) {
+                for (final CableNetworkSink sink : sinksOnChannel) {
+                    if (isInPlot(plot, sink.position())) {
+                        markPlotDirty();
+                        return;
+                    }
+                }
+            }
+        }
+    }
+
+    private void markPlotDirty() {
+        graphDirty = true;
+        lateRefresh = LATE_REFRESH_TICKS;
+    }
+
     public void flushPendingGraphRebuild(final Level level) {
+        if (lateRefresh > 0 && --lateRefresh == 0) {
+            graphDirty = true;
+        }
         if (!graphDirty) {
             return;
         }
