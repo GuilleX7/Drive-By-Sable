@@ -43,9 +43,9 @@ public record CableTypewriterHubKeyPacket(BlockPos pos, int glfwKey, boolean pre
             if (!be.checkUser(player.getUUID())) return;
 
             if (packet.press()) {
-                be.pressKey(packet.glfwKey());
+                be.pressChannelKey(packet.glfwKey());
             } else {
-                be.releaseKey(packet.glfwKey());
+                be.releaseChannelKey(packet.glfwKey());
             }
         });
     }

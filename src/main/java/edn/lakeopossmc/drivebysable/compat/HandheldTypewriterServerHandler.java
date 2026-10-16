@@ -19,10 +19,12 @@ import javax.annotation.Nullable;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 
 // --- BRIDGES HANDHELD TYPEWRITER KEYS TO LINKS AND CABLES --- //
 public final class HandheldTypewriterServerHandler {
@@ -38,6 +40,7 @@ public final class HandheldTypewriterServerHandler {
             final ItemStack controller,
             @Nullable final BlockPos lecternPos,
             final Collection<Integer> keys,
+            final Collection<Integer> channelKeys,
             final boolean pressed
     ) {
         final Level level = player.level();
@@ -63,14 +66,16 @@ public final class HandheldTypewriterServerHandler {
         if (hubPos.isPresent()
                 && (!keys.isEmpty() || level.isLoaded(hubPos.get()))
                 && level.getBlockEntity(hubPos.get()) instanceof final CableTypewriterHubBlockEntity hub) {
-            setChannels(level, hubPos.get(), keys, pressed);
-            hub.receiveHandheldInput(player.getUUID(), keys, pressed);
-            if (pressed && keys.stream().anyMatch(CableTypewriterHubServerHandler.KEY_TO_CHANNEL::containsKey)) {
+            setChannels(level, hubPos.get(), channelKeys, pressed);
+            final Set<Integer> held = new HashSet<>(keys);
+            held.addAll(channelKeys);
+            hub.receiveHandheldInput(player.getUUID(), held, pressed);
+            if (pressed && channelKeys.stream().anyMatch(CableTypewriterHubServerHandler.KEY_TO_CHANNEL::containsKey)) {
                 CableAdvancements.award(player, CableAdvancements.HANDHELD_SIGNAL);
             }
         }
         if (lecternPos != null) {
-            setChannels(level, lecternPos, keys, pressed);
+            setChannels(level, lecternPos, channelKeys, pressed);
         }
         //#endregion
     }

@@ -105,10 +105,11 @@ public final class ClientCableEvents {
         if (LinkedTypewriterInteractionHandler.getMode() != LinkedTypewriterInteractionHandler.Mode.ACTIVE) return;
 
         final int key = event.getKey();
-        final String channel = CableTypewriterHubServerHandler.KEY_TO_CHANNEL.get(key);
-        if (channel == null) return;
-
         if (be.getTypewriterEntries().getEntry(key) != null) return;
+
+        final int channelKey = KeyboardLayout.channelKey(key, event.getScanCode());
+        final String channel = CableTypewriterHubServerHandler.KEY_TO_CHANNEL.get(channelKey);
+        if (channel == null) return;
 
         if (!be.hasConnectionForChannel(channel) && !be.isInPromiscuousMode()) return;
 
@@ -119,7 +120,7 @@ public final class ClientCableEvents {
         final boolean press = event.getAction() == GLFW.GLFW_PRESS;
 
         PacketDistributor.sendToServer(
-                new CableTypewriterHubKeyPacket(be.getBlockPos(), key, press));
+                new CableTypewriterHubKeyPacket(be.getBlockPos(), channelKey, press));
 
         final var player = Minecraft.getInstance().player;
         if (player != null) {
@@ -127,12 +128,12 @@ public final class ClientCableEvents {
                 SimSoundEvents.LINKED_TYPEWRITER_TAP.playAt(
                         player.level(), player.blockPosition(), 1.0F, 1.0F, true);
                 LinkedTypewriterInteractionHandler.getPressedKeys()
-                        .add(keyToRenderIndex(key));
+                        .add(keyToRenderIndex(channelKey));
             } else {
                 SimSoundEvents.LINKED_TYPEWRITER_UNTAP.playAt(
                         player.level(), player.blockPosition(), 1.0F, 1.0F, true);
                 LinkedTypewriterInteractionHandler.getPressedKeys()
-                        .remove(Integer.valueOf(keyToRenderIndex(key)));
+                        .remove(Integer.valueOf(keyToRenderIndex(channelKey)));
             }
         }
     }

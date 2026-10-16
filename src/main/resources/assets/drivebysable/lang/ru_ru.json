@@ -115,6 +115,8 @@
   "item.drivebysable.handheld_typewriter_controller.tooltip.behaviour4": "_Подключается_ к продвинутой машинке. Клавиши, нажатые в активном режиме, передаются по её _кабельным каналам_.",
   "item.drivebysable.handheld_typewriter_controller.tooltip.condition5": "ПКМ по кафедре",
   "item.drivebysable.handheld_typewriter_controller.tooltip.behaviour5": "Помещает машинку на кафедру для удобства использования. _ПКМ крадучись_ по кафедре, чтобы забрать её.",
+  "item.drivebysable.handheld_typewriter_controller.tooltip.condition6": "ПКМ планшетом в инвентаре",
+  "item.drivebysable.handheld_typewriter_controller.tooltip.behaviour6": "_Вставляет_ клавиши, скопированные планшетом с _частотной пишущей машинки_ или _продвинутой пишущей машинки_, заменяя клавиши самой машинки.",
   "drivebysable.handheld_typewriter.key_bound": "Привязано к клавише: %s",
   "drivebysable.handheld_typewriter.bind_cancelled": "Привязка клавиши отменена",
   "drivebysable.handheld_typewriter.bind_mode": "Нажмите клавишу, чтобы привязать этот передатчик, Escape — отмена",

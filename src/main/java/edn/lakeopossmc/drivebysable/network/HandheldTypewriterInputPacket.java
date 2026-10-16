@@ -18,14 +18,19 @@ import java.util.Optional;
 
 // --- CLIENT SENDS HANDHELD TYPEWRITER KEY PRESSES --- //
 // * Either from the held controller, or from the lectern the player is using
-public record HandheldTypewriterInputPacket(List<Integer> keys, boolean press, Optional<BlockPos> lecternPos)
+public record HandheldTypewriterInputPacket(List<Integer> keys, List<Integer> channelKeys, boolean press, Optional<BlockPos> lecternPos)
         implements CustomPacketPayload {
+
+    public static HandheldTypewriterInputPacket switchedOn(final boolean on, final Optional<BlockPos> lecternPos) {
+        return new HandheldTypewriterInputPacket(List.of(), List.of(), on, lecternPos);
+    }
 
     public static final Type<HandheldTypewriterInputPacket> TYPE =
             new Type<>(DriveBySableMod.asResource("handheld_typewriter_input"));
 
     public static final StreamCodec<ByteBuf, HandheldTypewriterInputPacket> STREAM_CODEC = StreamCodec.composite(
             ByteBufCodecs.VAR_INT.apply(ByteBufCodecs.list()), HandheldTypewriterInputPacket::keys,
+            ByteBufCodecs.VAR_INT.apply(ByteBufCodecs.list()), HandheldTypewriterInputPacket::channelKeys,
             ByteBufCodecs.BOOL, HandheldTypewriterInputPacket::press,
             BlockPos.STREAM_CODEC.apply(ByteBufCodecs::optional), HandheldTypewriterInputPacket::lecternPos,
             HandheldTypewriterInputPacket::new
@@ -51,7 +56,7 @@ public record HandheldTypewriterInputPacket(List<Integer> keys, boolean press, O
                 if (player.level().getBlockEntity(lecternPos) instanceof final HandheldTypewriterLecternBlockEntity lectern
                         && lectern.isUsedBy(player)) {
                     HandheldTypewriterServerHandler.receiveKeys(
-                            player, lectern.getController(), lecternPos, packet.keys(), packet.press());
+                            player, lectern.getController(), lecternPos, packet.keys(), packet.channelKeys(), packet.press());
                 }
                 return;
             }
@@ -63,7 +68,7 @@ public record HandheldTypewriterInputPacket(List<Integer> keys, boolean press, O
                     return;
                 }
             }
-            HandheldTypewriterServerHandler.receiveKeys(player, controller, null, packet.keys(), packet.press());
+            HandheldTypewriterServerHandler.receiveKeys(player, controller, null, packet.keys(), packet.channelKeys(), packet.press());
         });
     }
 }

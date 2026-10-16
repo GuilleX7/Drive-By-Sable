@@ -115,6 +115,8 @@
   "item.drivebysable.handheld_typewriter_controller.tooltip.behaviour4": "_Łączy się_ z koncentratorem. Klawisze naciśnięte, gdy kontroler jest aktywny, są wysyłane _kanałami kabla_ tego koncentratora.",
   "item.drivebysable.handheld_typewriter_controller.tooltip.condition5": "Po kliknięciu PPM na Pulpicie",
   "item.drivebysable.handheld_typewriter_controller.tooltip.behaviour5": "Umieszcza kontroler na pulpicie, aby wygodniej go używać. Kliknij pulpit PPM podczas _skradania się_, aby zabrać kontroler z powrotem.",
+  "item.drivebysable.handheld_typewriter_controller.tooltip.condition6": "Po kliknięciu PPM Notatnikiem w ekwipunku",
+  "item.drivebysable.handheld_typewriter_controller.tooltip.behaviour6": "_Wkleja_ klawisze skopiowane Notatnikiem z _Powiązanej Maszyny do Pisania_ lub _Koncentratora Kabli Maszyny do Pisania_, zastępując te zapisane w kontrolerze.",
   "drivebysable.handheld_typewriter.key_bound": "Powiązano z klawiszem: %s",
   "drivebysable.handheld_typewriter.bind_cancelled": "Anulowano wiązanie klawisza",
   "drivebysable.handheld_typewriter.bind_mode": "Naciśnij klawisz, aby powiązać to łącze, lub Escape, aby anulować",

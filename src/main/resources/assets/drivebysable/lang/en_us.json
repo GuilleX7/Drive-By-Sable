@@ -115,6 +115,8 @@
   "item.drivebysable.handheld_typewriter_controller.tooltip.behaviour4": "_Connects_ to the hub. Keys pressed while active are sent through the hub's _cable channels_.",
   "item.drivebysable.handheld_typewriter_controller.tooltip.condition5": "When R-Clicked on Lectern",
   "item.drivebysable.handheld_typewriter_controller.tooltip.behaviour5": "Places the controller on the lectern for easy use. _Sneak_ and R-Click the lectern to take it back.",
+  "item.drivebysable.handheld_typewriter_controller.tooltip.condition6": "When R-Clicked with a Clipboard in an inventory",
+  "item.drivebysable.handheld_typewriter_controller.tooltip.behaviour6": "_Pastes_ the keys a clipboard copied from a _Linked Typewriter_ or _Typewriter Cable Hub_, replacing the controller's own.",
   "drivebysable.handheld_typewriter.key_bound": "Bound to key: %s",
   "drivebysable.handheld_typewriter.bind_cancelled": "Key binding cancelled",
   "drivebysable.handheld_typewriter.bind_mode": "Press a key to bind this link, Escape to cancel",

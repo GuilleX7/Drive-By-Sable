@@ -237,6 +237,24 @@ public class CableTypewriterHubBlockEntity extends LinkedTypewriterBlockEntity {
         }
     }
 
+    // * Channel keys from the key packet
+    public void pressChannelKey(final int key) {
+        if (this.level instanceof final ServerLevel level) {
+            CableTypewriterHubServerHandler.receiveKey(level, this.getBlockPos(), key, true);
+            this.pulseWaiting = true;
+            this.getPressedKeys().add(key);
+            ComputerCraftCompat.queueTypewriterKey(this, "key", key, false);
+        }
+    }
+
+    public void releaseChannelKey(final int key) {
+        if (this.level instanceof final ServerLevel level) {
+            CableTypewriterHubServerHandler.receiveKey(level, this.getBlockPos(), key, false);
+            this.getPressedKeys().removeIf(x -> x == key);
+            ComputerCraftCompat.queueTypewriterKey(this, "key_up", key, null);
+        }
+    }
+
     // * Clear all channel signals on disconnect
     @Override
     public void disconnectUser() {

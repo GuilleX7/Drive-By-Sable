@@ -33,8 +33,10 @@ import net.neoforged.neoforge.network.PacketDistributor;
 import org.lwjgl.glfw.GLFW;
 
 import java.util.Collections;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
@@ -61,6 +63,7 @@ public final class HandheldTypewriterClientHandler {
     private static BlockPos bindPos;
     private static InteractionHand bindHand = InteractionHand.MAIN_HAND;
     private static final Set<Integer> pressed = new HashSet<>();
+    private static final Map<Integer, Integer> channelKeys = new HashMap<>();
     private static int packetCooldown;
     private static int activeCooldown;
     private static int bindMessageCooldown;
@@ -143,17 +146,18 @@ public final class HandheldTypewriterClientHandler {
     // * Lets go of everything the server still thinks is held
     private static void stop() {
         if (!pressed.isEmpty()) {
-            PacketDistributor.sendToServer(new HandheldTypewriterInputPacket(List.copyOf(pressed), false, Optional.ofNullable(lecternPos)));
+            sendKeys(List.copyOf(pressed), false);
         }
         // * Switched off, so a bound Typewriter Hub goes dark straight away
         if (mode == Mode.ACTIVE) {
-            PacketDistributor.sendToServer(new HandheldTypewriterInputPacket(List.of(), false, Optional.ofNullable(lecternPos)));
+            PacketDistributor.sendToServer(HandheldTypewriterInputPacket.switchedOn(false, Optional.ofNullable(lecternPos)));
         }
         if (lecternPos != null) {
             PacketDistributor.sendToServer(new HandheldTypewriterStopLecternPacket(lecternPos));
         }
 
         pressed.clear();
+        channelKeys.clear();
         HandheldTypewriterItemRenderer.resetKeys();
         packetCooldown = 0;
         activeCooldown = 0;
@@ -213,8 +217,9 @@ public final class HandheldTypewriterClientHandler {
 
         if (action == GLFW.GLFW_PRESS) {
             if (pressed.add(key)) {
+                channelKeys.put(key, KeyboardLayout.channelKey(key, scanCode));
                 if (isCaptured(minecraft, controller, key)) {
-                    PacketDistributor.sendToServer(new HandheldTypewriterInputPacket(List.of(key), true, Optional.ofNullable(lecternPos)));
+                    sendKeys(List.of(key), true);
                     packetCooldown = PACKET_RATE;
                 }
                 SimSoundEvents.LINKED_TYPEWRITER_TAP.playAt(minecraft.player.level(), minecraft.player.blockPosition(), 1.0F, 1.0F, true);
@@ -227,8 +232,9 @@ public final class HandheldTypewriterClientHandler {
             return false;
         }
         if (isCaptured(minecraft, controller, key)) {
-            PacketDistributor.sendToServer(new HandheldTypewriterInputPacket(List.of(key), false, Optional.ofNullable(lecternPos)));
+            sendKeys(List.of(key), false);
         }
+        channelKeys.remove(key);
         SimSoundEvents.LINKED_TYPEWRITER_UNTAP.playAt(minecraft.player.level(), minecraft.player.blockPosition(), 1.0F, 1.0F, true);
         return true;
     }
@@ -239,7 +245,23 @@ public final class HandheldTypewriterClientHandler {
             return true;
         }
         final boolean channelsListening = lecternPos != null || HubItem.getHubPos(controller).isPresent();
-        return channelsListening && CableTypewriterHubServerHandler.KEY_TO_CHANNEL.containsKey(key);
+        return channelsListening && CableTypewriterHubServerHandler.KEY_TO_CHANNEL.containsKey(channelKey(minecraft, controller, key));
+    }
+
+    private static int channelKey(final Minecraft minecraft, final ItemStack controller, final int key) {
+        if (HandheldTypewriterData.readEntries(controller, minecraft.player.registryAccess()).getEntry(key) != null) {
+            return key;
+        }
+        return channelKeys.getOrDefault(key, key);
+    }
+
+    private static void sendKeys(final List<Integer> keys, final boolean press) {
+        final Minecraft minecraft = Minecraft.getInstance();
+        final ItemStack controller = currentController(minecraft);
+        final List<Integer> channels = controller.isEmpty() || minecraft.player == null
+                ? keys
+                : keys.stream().map(key -> channelKey(minecraft, controller, key)).toList();
+        PacketDistributor.sendToServer(new HandheldTypewriterInputPacket(keys, channels, press, Optional.ofNullable(lecternPos)));
     }
 
     // * Held keys that actually do something
@@ -335,7 +357,7 @@ public final class HandheldTypewriterClientHandler {
         }
         if (activeCooldown == 0) {
             if (HubItem.getHubPos(currentController(minecraft)).isPresent()) {
-                PacketDistributor.sendToServer(new HandheldTypewriterInputPacket(List.of(), true, Optional.ofNullable(lecternPos)));
+                PacketDistributor.sendToServer(HandheldTypewriterInputPacket.switchedOn(true, Optional.ofNullable(lecternPos)));
             }
             activeCooldown = ACTIVE_RATE;
         }
@@ -346,7 +368,7 @@ public final class HandheldTypewriterClientHandler {
         if (packetCooldown == 0 && !pressed.isEmpty()) {
             final List<Integer> held = heldSignalKeys(minecraft);
             if (!held.isEmpty()) {
-                PacketDistributor.sendToServer(new HandheldTypewriterInputPacket(held, true, Optional.ofNullable(lecternPos)));
+                sendKeys(held, true);
             }
             packetCooldown = PACKET_RATE;
         }

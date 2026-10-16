@@ -1,5 +1,8 @@
 package edn.lakeopossmc.drivebysable.compat;
 
+import com.simibubi.create.AllBlocks;
+import com.simibubi.create.AllDataComponents;
+import com.simibubi.create.content.equipment.clipboard.ClipboardContent;
 import dev.simulated_team.simulated.content.blocks.redstone.linked_typewriter.LinkedTypewriterEntries;
 import edn.lakeopossmc.drivebysable.CableItems;
 import net.minecraft.core.BlockPos;
@@ -11,9 +14,14 @@ import net.minecraft.nbt.Tag;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.component.CustomData;
 
+import javax.annotation.Nullable;
+
 // --- KEY BINDINGS STORED ON A HANDHELD TYPEWRITER CONTROLLER --- //
 public final class HandheldTypewriterData {
     private static final String KEYS_KEY = "TypewriterKeys";
+    // * Where a Linked Typewriter or Typewriter Hub copies its keys on a clipboard
+    private static final String CLIPBOARD_KEY = "TypewriterKeys";
+    private static final String CLIPBOARD_KEYS = "Keys";
 
     private HandheldTypewriterData() {
     }
@@ -40,6 +48,22 @@ public final class HandheldTypewriterData {
             tag.put(KEYS_KEY, entries.saveKeys(registries));
         }
         stack.set(DataComponents.CUSTOM_DATA, CustomData.of(tag));
+    }
+
+    // * The configured keys a clipboard copied from a typewriter, or null when it holds none
+    @Nullable
+    public static ListTag clipboardKeys(final ItemStack clipboard) {
+        if (!AllBlocks.CLIPBOARD.isIn(clipboard)) {
+            return null;
+        }
+        final CompoundTag copied = clipboard.getOrDefault(AllDataComponents.CLIPBOARD_CONTENT, ClipboardContent.EMPTY)
+                .copiedValues()
+                .orElse(null);
+        if (copied == null || !copied.contains(CLIPBOARD_KEY, Tag.TAG_COMPOUND)) {
+            return null;
+        }
+        final ListTag keys = copied.getCompound(CLIPBOARD_KEY).getList(CLIPBOARD_KEYS, Tag.TAG_COMPOUND);
+        return keys.isEmpty() ? null : keys;
     }
 
     public static int keyCount(final ItemStack stack) {

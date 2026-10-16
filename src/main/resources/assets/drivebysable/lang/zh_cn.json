@@ -115,6 +115,8 @@
   "item.drivebysable.handheld_typewriter_controller.tooltip.behaviour4": "_连接_到集线器。激活时按下的按键会通过集线器的_电缆通道_发送。",
   "item.drivebysable.handheld_typewriter_controller.tooltip.condition5": "在讲台上右键点击时",
   "item.drivebysable.handheld_typewriter_controller.tooltip.behaviour5": "将控制器放置在讲台上以便使用。_潜行_并右键点击讲台可将其取回。",
+  "item.drivebysable.handheld_typewriter_controller.tooltip.condition6": "在物品栏中用剪贴板右键点击时",
+  "item.drivebysable.handheld_typewriter_controller.tooltip.behaviour6": "_粘贴_剪贴板从_联动打字机_或_打字机电缆集线器_复制的按键，替换控制器原有的按键。",
   "drivebysable.handheld_typewriter.key_bound": "已绑定到按键：%s",
   "drivebysable.handheld_typewriter.bind_cancelled": "已取消按键绑定",
   "drivebysable.handheld_typewriter.bind_mode": "按下一个按键以绑定此连接，按 Esc 取消",

@@ -1,6 +1,8 @@
 package edn.lakeopossmc.drivebysable.items;
 
 import com.simibubi.create.foundation.item.TooltipHelper;
+import com.simibubi.create.foundation.utility.CreateLang;
+import dev.simulated_team.simulated.content.blocks.redstone.linked_typewriter.LinkedTypewriterEntries;
 import dev.simulated_team.simulated.content.blocks.redstone.linked_typewriter.LinkedTypewriterInteractionHandler;
 import edn.lakeopossmc.drivebysable.CableBlocks;
 import edn.lakeopossmc.drivebysable.CableConfig;
@@ -18,9 +20,14 @@ import net.minecraft.client.resources.language.I18n;
 import net.minecraft.core.BlockPos;
 import net.minecraft.network.chat.Component;
 import net.minecraft.network.chat.MutableComponent;
+import net.minecraft.nbt.ListTag;
 import net.minecraft.network.chat.Style;
 import net.minecraft.server.level.ServerPlayer;
+import net.minecraft.sounds.SoundEvents;
 import net.minecraft.sounds.SoundSource;
+import net.minecraft.world.entity.SlotAccess;
+import net.minecraft.world.inventory.ClickAction;
+import net.minecraft.world.inventory.Slot;
 import net.minecraft.world.InteractionHand;
 import net.minecraft.world.InteractionResult;
 import net.minecraft.world.InteractionResultHolder;
@@ -145,6 +152,32 @@ public class HandheldTypewriterControllerItem extends Item {
     }
     //#endregion
 
+    //#region // --- PASTING KEYS FROM A CLIPBOARD --- //
+    @Override
+    public boolean overrideOtherStackedOnMe(final ItemStack stack, final ItemStack other, final Slot slot,
+                                            final ClickAction action, final Player player, final SlotAccess access) {
+        if (action != ClickAction.SECONDARY || !slot.allowModification(player)) {
+            return false;
+        }
+        final ListTag keys = HandheldTypewriterData.clipboardKeys(other);
+        if (keys == null) {
+            return false;
+        }
+
+        final var registries = player.level().registryAccess();
+        HandheldTypewriterData.writeEntries(stack, LinkedTypewriterEntries.readKeys(registries, keys, BlockPos.ZERO), registries);
+        if (player.level().isClientSide) {
+            player.playSound(SoundEvents.BOOK_PAGE_TURN, 0.8F, 1.0F);
+        } else {
+            player.displayClientMessage(CreateLang.translate("clipboard.pasted_to",
+                            stack.getHoverName().copy().withStyle(ChatFormatting.WHITE))
+                    .style(ChatFormatting.GREEN)
+                    .component(), true);
+        }
+        return true;
+    }
+    //#endregion
+
     //#region // --- EXTENSION TOGGLE --- //
     @Override
     public boolean isEnabled(final FeatureFlagSet enabledFeatures) {
@@ -181,7 +214,7 @@ public class HandheldTypewriterControllerItem extends Item {
             tooltip.add(Component.empty());
 
             // * Only pairs that actually have translations
-            for (int i = 1; i <= 5; i++) {
+            for (int i = 1; i <= 6; i++) {
                 final String conditionKey = TOOLTIP_KEY + ".condition" + i;
                 final String behaviourKey = TOOLTIP_KEY + ".behaviour" + i;
                 if (!I18n.exists(conditionKey) || !I18n.exists(behaviourKey)) {
